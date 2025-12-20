@@ -1,3 +1,5 @@
+#probe configuration as is (no edit to xc)
+
 import numpy as np
 from kilosort.io import save_probe
 
