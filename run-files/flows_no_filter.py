@@ -3,6 +3,9 @@
 Two-stage Kilosort4 flow:
   1) OFFLINE (first hour): learn templates (Wall) + export ops
   2) ONLINE/ON-CHIP (rest): reuse exported ops + run template matching (extract) only
+  
+Note:
+this code passses all the clutsers from the offline to the online including mua clusters.
 
 Example:
 python flows.py \
