@@ -12,8 +12,7 @@ from kilosort.run_kilosort import (
     detect_spikes,
     cluster_spikes,
 )
-# New Import for Quality Metrics
-from kilosort import quality_metrics
+
 from kilosort.io import BinaryFiltered
 from kilosort import preprocessing
 from kilosort.parameters import DEFAULT_SETTINGS
@@ -95,7 +94,7 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
             bfile.dshift = ds_padded
     return bfile
 
-def offline_flow_first_hour(bin_path: Path, probe_path: Path, out_dir: Path,
+def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
                             fs: float, nchan: int, dtype: str):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -128,38 +127,38 @@ def offline_flow_first_hour(bin_path: Path, probe_path: Path, out_dir: Path,
     ops = compute_preprocessing(ops, device=device)
     ops, bfile, st0 = compute_drift_correction(ops, device=device)
     st, tF, Wall0, clu0 = detect_spikes(ops, device=device, bfile=bfile)
-    
-    # (D) Full Clustering
+
+    # (D) Final clustering - this step generates the templates and initial labels
     clu, Wall, st, tF = cluster_spikes(st, tF, ops, device, bfile)
 
-    # --- NEW: QUALITY METRICS & FILTERING ---
-    logger.info("[OFFLINE] Calculating quality metrics...")
-    # Calculate automated labels (good/mua/noise)
-    ops, df = quality_metrics.compute_quality_metrics(ops, bfile, st, Wall, device)
-    
-    # Identify 'good' clusters
-    # KS4 stores labels in ops['KSLabel'] or via the returned dataframe
-    good_mask = (ops['KSLabel'] == 'good')
-    good_indices = np.where(good_mask)[0]
-    
-    if len(good_indices) == 0:
-        logger.warning("[OFFLINE] No 'good' clusters found! Exporting all clusters to avoid crash.")
-    else:
-        logger.info(f"[OFFLINE] Filtering: Keeping {len(good_indices)} 'good' clusters out of {len(Wall)}.")
-        # Filter Wall: (K, Chan, PCs) -> (K_good, Chan, PCs)
-        Wall = Wall[good_indices]
+    # --- NEW: FILTERING LOGIC ---
+    # In KS4, cluster_spikes populates 'KSLabel' in the ops dictionary.
+    # We use this to filter the Wall (templates) before they go to the SoC.
+    if 'KSLabel' in ops:
+        # Identify indices where the automated label is 'good'
+        good_indices = np.where(ops['KSLabel'] == 'good')[0]
         
-        # Update ops to reflect filtered clusters (optional but cleaner)
-        if 'iCC' in ops: ops['iCC'] = ops['iCC'][good_indices]
-        if 'iU' in ops: ops['iU'] = ops['iU'][good_indices]
-    # ----------------------------------------
+        if len(good_indices) > 0:
+            logger.info(f"[FILTER] Found {len(good_indices)} good clusters. Removing noise/mua...")
+            
+            # Filter the templates: (K, Chan, PCs) -> (K_good, Chan, PCs)
+            Wall = Wall[good_indices]
+            
+            # Synchronize the metadata for the Online Flow
+            if 'iCC' in ops: ops['iCC'] = ops['iCC'][good_indices]
+            if 'iU' in ops: ops['iU'] = ops['iU'][good_indices]
+            # Update labels to match new Wall size
+            ops['KSLabel'] = ops['KSLabel'][good_indices] 
+        else:
+            logger.warning("[FILTER] No 'good' clusters detected. Passing all units to Online Flow.")
+    # -----------------------------
 
     np.save(out_dir / "Wall.npy", Wall.detach().cpu().numpy())
     export_for_online(ops, Wall, out_dir)
     logger.info("[OFFLINE] Done.")
     return ops, Wall
 
-def online_flow_rest(bin_path: Path, probe_path: Path,
+def online_flow(bin_path: Path, probe_path: Path,
                      exported_offline_dir: Path, out_dir: Path):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -186,19 +185,20 @@ def online_flow_rest(bin_path: Path, probe_path: Path,
     phy_dir.mkdir(parents=True, exist_ok=True)
 
     def ensure_ops_tensors(ops, device):
-        keys = ["iCC", "iCC_mask", "iU", "wPCA", "yblk", "xblk"]
+        # Expanded list of keys required for spatial/phy calculations
+        keys = ["iCC", "iCC_mask", "iU", "wPCA", "yblk", "xblk", 
+                "chanMap", "xc", "yc", "kcoords"]
         for k in keys:
             if k in ops:
+                # Force the tensor to the active GPU device
                 ops[k] = torch.as_tensor(ops[k], device=device)
         return ops
 
+    # Re-map the ops to the GPU before calling save_to_phy
     ops = ensure_ops_tensors(ops, device)
     
-    save_to_phy(st, st[:, 1].astype(np.int32), tF.to(device), Wall, probe, ops, imin, phy_dir, ops["settings"].get("data_dtype", "int16"), False)
-
-    np.save(out_dir / "st.npy", st)
-    save_ops(ops, results_dir=out_dir)
-    logger.info("[ONLINE] Done.")
+    # Also ensure the spike times (st) and features (tF) are on the device
+    st_tensor = torch.as_tensor(st, device=device)
 
 def main():
     ap = argparse.ArgumentParser()
@@ -211,8 +211,8 @@ def main():
     ap.add_argument("--dtype", default="int16", type=str)
     args = ap.parse_args()
 
-    offline_flow_first_hour(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.dtype)
-    online_flow_rest(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online))
+    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.dtype)
+    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online))
 
 if __name__ == "__main__":
     main()
