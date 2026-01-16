@@ -16,6 +16,11 @@ python flows.py \
   --fs 20000 \
   --nchan 128 \
   --dtype int16
+
+Editting the time:
+1.Change the constant HOUR_SEC
+2.Out_offline and Out_online names
+
 """
 
 import argparse
