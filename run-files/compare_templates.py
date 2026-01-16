@@ -3,6 +3,27 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
 
+"""
+MODULE: SoC Neural Template Validation Tool
+PROJECT: Neural Activity Processor (Thesis in Electrical Engineering)
+
+DESCRIPTION:
+This script performs quantitative validation of the simplified "Online Flow" 
+used in a custom CMOS SoC. It compares templates (neuronal fingerprints) 
+learned during a 1-hour "Learning Phase" against a "Gold Standard" run 
+(Full Kilosort4 GUI run using 100% of data).
+
+HOW TO RUN (Terminal):
+Execute the script by passing the paths to your GUI templates, SoC templates, 
+and the configuration file:
+$ python3 compare_and_export.py --gui_path ./gui/templates.npy --flows_path ./offline/Wall.npy --ops_path ./offline/ops.npy
+
+HARDWARE MAPPING:
+1. PC Projection: Simulates the SoC Co-processor logic reducing data to 3 PCs.
+2. Wall.npy: Represents the templates stored in the SoC's on-chip SRAM.
+3. Similarity Matrix: Measures the accuracy of the feature detection unit.
+"""
+
 def main():
     # 1. Setup the terminal argument parser
     parser = argparse.ArgumentParser(description="Compare Kilosort templates between GUI and Two-Flow runs.")
