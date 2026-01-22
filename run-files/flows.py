@@ -35,7 +35,7 @@ This version:
 
 logger = setup_logger(__name__)
 
-HOUR_SEC = 2400.0  # edit as you like
+HOUR_SEC = 600.0  # edit as you like
 
 
 def ensure_dir(p: Path) -> Path:
