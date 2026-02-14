@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GUI vs FLOW comparison using spike overlap-derived scores.
-
+with timewindow specified (in seconds)
 Pairwise overlap matrix (within matched spikes):
   M[g,f] = #matched spikes assigned to GUI cluster g AND FLOW cluster f
 
