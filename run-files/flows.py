@@ -24,6 +24,9 @@ Two-stage Kilosort4 flow:
   1) OFFLINE (first hour): learn templates (Wall) + export ops
   2) ONLINE/ON-CHIP (rest): reuse exported ops + run template matching (extract) only
 
+#python flows.py   --bin "/media/mariandawud/Extreme SSD/mS51/dat/mS51_49/mS51_49.dat"   --probe /home/mariandawud/kilosort/ms51/probe_ms51_new.json   --out_offline "/media/mariandawud/Extreme SSD/results/mS51_res/flows_new/offline_20mins-51"   --out_online "/media/mariandawud/Extreme SSD/results/mS51_res/flows_new/online_20mins-51"   --fs 20000   --nchan 135   --dtype int16
+
+
 This version:
 - DOES NOT filter Wall
 - Writes offline statistics (good/mua counts, total clusters, etc.)
@@ -35,7 +38,7 @@ This version:
 
 logger = setup_logger(__name__)
 
-HOUR_SEC = 20400.0  # edit as you like
+HOUR_SEC = 1200.0  # edit as you like
 
 
 def ensure_dir(p: Path) -> Path:
