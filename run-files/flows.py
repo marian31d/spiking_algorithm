@@ -35,7 +35,7 @@ This version:
 
 logger = setup_logger(__name__)
 
-HOUR_SEC = 600.0  # edit as you like
+HOUR_SEC = 20400.0  # edit as you like
 
 
 def ensure_dir(p: Path) -> Path:
@@ -49,6 +49,13 @@ def export_for_online(ops: dict, Wall: torch.Tensor, out_dir: Path):
     np.save(out_dir / "Wall.npy", Wall.detach().cpu().numpy())
     logger.info(f"[EXPORT] Saved ops.npy + Wall.npy to: {out_dir}")
 
+def remap_clusters_to_contiguous(spike_clusters: np.ndarray):
+    """Map arbitrary cluster IDs to 0..(K-1) contiguous IDs."""
+    spike_clusters = spike_clusters.astype(np.int64, copy=False)
+    uniq = np.unique(spike_clusters)
+    mapping = {cid: i for i, cid in enumerate(uniq)}
+    remapped = np.vectorize(mapping.get)(spike_clusters).astype(np.int32)
+    return remapped, uniq
 
 def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np.ndarray):
     """
@@ -356,7 +363,12 @@ def online_flow(bin_path: Path, probe_path: Path,
     phy_dir = out_dir / "phy"
     phy_dir.mkdir(parents=True, exist_ok=True)
 
-    spike_clusters = st[:, 1].astype(np.int32)
+    spike_clusters_raw = st[:, 1].astype(np.int64, copy=False)
+    spike_clusters, cluster_ids = remap_clusters_to_contiguous(spike_clusters_raw)
+
+    # Also overwrite st[:,1] so everything stays consistent
+    st = st.copy()
+    st[:, 1] = spike_clusters
 
     # ---------------------------
     # Export to Phy on CPU to avoid CUDA OOM AND keep correct Wall layout for save_to_phy
@@ -386,6 +398,17 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+    print("\n=== CHANNEL DEBUG BEFORE save_to_phy ===")
+    print("HOUR_SEC / tmin:", ops["settings"]["tmin"])
+    print("probe_path:", probe_path)
+    print("probe n_chan:", probe["n_chan"])
+    cm = probe["chanMap"]
+    print("chanMap min/max/len:", int(cm.min()), int(cm.max()), len(cm))
+
+    print("ops n_chan_bin:", ops.get("n_chan_bin", None))
+    print("ops n_chan:", ops.get("n_chan", None))
+
 
     save_to_phy(
         st=st,
