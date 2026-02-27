@@ -1,8 +1,56 @@
 #!/usr/bin/env python3
+
+# =========================
+# REPRODUCIBILITY BLOCK
+# =========================
+
+import os
+
+# cuBLAS deterministic behavior (must be set before torch import)
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
+# Optional but recommended for strict CPU determinism
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
+# =========================
+
+# =========================
+# DETERMINISM / REPRODUCIBILITY (must be before torch import)
+# =========================
+import os
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+os.environ["PYTHONHASHSEED"] = "0"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
+import random
+import numpy as np
+# Seed Python & NumPy
+random.seed(0)
+np.random.seed(0)
+# =========================
+
+# Seed Torch
+torch.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+
+import torch
+# cuDNN settings
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
+# Disable TF32 (important on Ampere+ GPUs)
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+
+# Enforce strict determinism (optional but recommended)
+torch.use_deterministic_algorithms(True)
+
 import argparse
 from pathlib import Path
-import numpy as np
-import torch
 import json
 
 from kilosort.io import load_probe, BinaryFiltered, save_ops, load_ops
@@ -38,7 +86,6 @@ This version:
 
 logger = setup_logger(__name__)
 
-HOUR_SEC = 1200.0  # edit as you like
 
 
 def ensure_dir(p: Path) -> Path:
@@ -271,7 +318,7 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
 
 
 def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
-                 fs: float, nchan: int, dtype: str):
+                 fs: float, nchan: int, dtype: str, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
@@ -312,6 +359,13 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     spike_clusters = st[:, 1].astype(np.int32)
     imin = bfile.imin
 
+    # BEFORE save_to_phy in offline_flow
+    spike_clusters_raw = st[:, 1].astype(np.int64, copy=False)
+    spike_clusters, cluster_ids = remap_clusters_to_contiguous(spike_clusters_raw)
+
+    st = st.copy()
+    st[:, 1] = spike_clusters
+
     ret = save_to_phy(
         st=st,
         clu=spike_clusters,
@@ -334,7 +388,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
 
 
 def online_flow(bin_path: Path, probe_path: Path,
-                exported_offline_dir: Path, out_dir: Path):
+                exported_offline_dir: Path, out_dir: Path, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
@@ -443,10 +497,11 @@ def main():
     ap.add_argument("--fs", required=True, type=float)
     ap.add_argument("--nchan", required=True, type=int)
     ap.add_argument("--dtype", default="int16", type=str)
+    ap.add_argument("--HOUR_SEC", type=float, required=True)
     args = ap.parse_args()
 
-    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.dtype)
-    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online))
+    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.dtype,args.HOUR_SEC)
+    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
 
 if __name__ == "__main__":
