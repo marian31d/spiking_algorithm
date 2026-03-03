@@ -37,6 +37,7 @@ import json
 
 from kilosort.io import load_probe, BinaryFiltered, save_ops, load_ops
 from kilosort.run_kilosort import (
+    _sort,   
     initialize_ops,
     compute_preprocessing,
     compute_drift_correction,
@@ -69,7 +70,6 @@ This version:
 logger = setup_logger(__name__)
 
 
-
 def ensure_dir(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
@@ -81,15 +81,8 @@ def export_for_online(ops: dict, Wall: torch.Tensor, out_dir: Path):
     np.save(out_dir / "Wall.npy", Wall.detach().cpu().numpy())
     logger.info(f"[EXPORT] Saved ops.npy + Wall.npy to: {out_dir}")
 
-def remap_clusters_to_contiguous(spike_clusters: np.ndarray):
-    """Map arbitrary cluster IDs to 0..(K-1) contiguous IDs."""
-    spike_clusters = spike_clusters.astype(np.int64, copy=False)
-    uniq = np.unique(spike_clusters)
-    mapping = {cid: i for i, cid in enumerate(uniq)}
-    remapped = np.vectorize(mapping.get)(spike_clusters).astype(np.int32)
-    return remapped, uniq
 
-def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np.ndarray):
+def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np.ndarray, float: HOUR_SEC):
     """
     Writes offline statistics into:
       - out_dir/offline_stats.txt
@@ -188,6 +181,7 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
 
     summary = {
         "phy_dir": str(phy_dir),
+        "HOUR_SEC": HOUR_SEC,
         "labels_file_used": labels_file_used,
         "Wall_num_templates_K": K,
         "offline_num_spikes_st": n_spikes,
@@ -304,7 +298,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
-
+    
     user_settings = {
         "fs": float(fs),
         "n_chan_bin": int(nchan),
@@ -323,51 +317,29 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     settings["filename"] = str(bin_path)
     settings["data_dir"] = str(bin_path.parent)
     settings["results_dir"] = str(out_dir)
-
-    ops, settings = initialize_ops(settings, probe, dtype, True, False, device, False, False)
-    ops["settings"] = settings
-    ops["filename"] = settings["filename"]
-    ops["data_dir"] = settings["data_dir"]
-
-    ops = compute_preprocessing(ops, device=device)
-    ops, bfile, st0 = compute_drift_correction(ops, device=device)
-    st, tF, Wall0, clu0 = detect_spikes(ops, device=device, bfile=bfile)
-
-    clu, Wall, st, tF = cluster_spikes(st, tF, ops, device, bfile)
-
-    phy_dir = out_dir / "phy_offline"
-    phy_dir.mkdir(parents=True, exist_ok=True)
+                     
+    do_car = True
+    clea_cache = False
+    invert_sign = False
+    save_preprocessed_copy = False 
+    verbose_log = False
+    save_extra_vars = True
+    data_dtype = 'int16'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                     
+    _sort(settings["filename"], settings["results_dir"], probe, settings, data_dtype, device, do_CAR,
+          clear_cache, invert_sign, save_preprocessed_copy, verbose_log,
+          save_extra_vars, file_object=None, progress_bar=None, gui_sorter=None)                  
 
     spike_clusters = st[:, 1].astype(np.int32)
     imin = bfile.imin
 
-    # BEFORE save_to_phy in offline_flow
-    spike_clusters_raw = st[:, 1].astype(np.int64, copy=False)
-    spike_clusters, cluster_ids = remap_clusters_to_contiguous(spike_clusters_raw)
-
     st = st.copy()
     st[:, 1] = spike_clusters
 
-    ret = save_to_phy(
-        st=st,
-        clu=spike_clusters,
-        tF=tF,
-        Wall=Wall,
-        probe=probe,
-        ops=ops,
-        imin=imin,
-        results_dir=phy_dir,
-        data_dtype=ops["settings"].get("data_dtype", "int16"),
-        save_extra_vars=False,
-    )
-    phy_used = Path(ret[0]) if isinstance(ret, (list, tuple)) else phy_dir
-
-    write_offline_stats(phy_used, out_dir, Wall, st)
-
-    export_for_online(ops, Wall, out_dir)
-    logger.info("[OFFLINE] Done.")
-    return ops, Wall
-
+    write_offline_stats(phy_used, out_dir, Wall, st, HOUR_SEC)
+    logger.info("Offline stats written")
+    return 
 
 def online_flow(bin_path: Path, probe_path: Path,
                 exported_offline_dir: Path, out_dir: Path, HOUR_SEC: float):
@@ -467,7 +439,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     save_ops(ops, results_dir=out_dir)
 
     logger.info("[ONLINE] Done.")
-    return st, tF, ops
+    return
 
 
 def main():
@@ -482,7 +454,7 @@ def main():
     ap.add_argument("--HOUR_SEC", type=float, required=True)
     args = ap.parse_args()
 
-    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.dtype,args.HOUR_SEC)
+    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.dtype, args.HOUR_SEC)
     online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
 
