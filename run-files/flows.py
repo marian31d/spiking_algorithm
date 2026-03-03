@@ -1,22 +1,6 @@
 #!/usr/bin/env python3
 
 # =========================
-# REPRODUCIBILITY BLOCK
-# =========================
-
-import os
-
-# cuBLAS deterministic behavior (must be set before torch import)
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-
-# Optional but recommended for strict CPU determinism
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-
-# =========================
-
-# =========================
 # DETERMINISM / REPRODUCIBILITY (must be before torch import)
 # =========================
 import os
@@ -34,10 +18,10 @@ np.random.seed(0)
 # =========================
 
 # Seed Torch
+import torch
 torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
 
-import torch
 # cuDNN settings
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
@@ -46,9 +30,7 @@ torch.backends.cudnn.benchmark = False
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 
-# Enforce strict determinism (optional but recommended)
-torch.use_deterministic_algorithms(True)
-
+#------------------------------------------------------
 import argparse
 from pathlib import Path
 import json
@@ -328,7 +310,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "n_chan_bin": int(nchan),
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
-        "n_pcs": 3,
+        "n_pcs": 6,
         "nearest_chans": 10,
         "position_limit": 100.0,
         "nt": 61,
