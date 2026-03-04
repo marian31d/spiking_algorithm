@@ -212,7 +212,7 @@ def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, H
 
     logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
-def build_bfile_from_ops(bin_path, probe, ops, device, do_CAR, invert_sign, data_dtype, tmin=0.0, tmax=np.inf):
+def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
     fs = float(s["fs"])
@@ -243,10 +243,10 @@ def build_bfile_from_ops(bin_path, probe, ops, device, do_CAR, invert_sign, data
         whiten_mat=Wrot,              # from ops
         dshift=dshift,
         device=device,
-        do_CAR= do_CAR,
+        do_CAR= DO_CAR,
         artifact_threshold=float(s.get("artifact_threshold", np.inf)),
-        invert_sign=invert_sign,
-        dtype=data_dtype,
+        invert_sign=INVERT_SIGN,
+        dtype=DATA_DTYPE,
         tmin=float(tmin),
         tmax=float(tmax),
     )
@@ -263,7 +263,7 @@ def build_bfile_from_ops(bin_path, probe, ops, device, do_CAR, invert_sign, data
 
 
 def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
-                 fs: float, nchan: int, HOUR_SEC: float, do_CAR: bool, invert_sign: bool, data_dtype: str):
+                 fs: float, nchan: int, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
@@ -285,15 +285,15 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     settings["results_dir"] = results_dir
     
     ops, st, clu, tF, Wall, _, _, _, _ =_sort(settings["filename"], 
-                   results_dir, probe, settings, data_dtype, device, do_CAR, clear_cache, invert_sign, 
-                   save_preprocessed_copy, verbose_log, save_extra_vars, file_object=None, progress_bar=None, gui_sorter=None)                  
+                   results_dir, probe, settings, DATA_DTYPE, device, DO_CAR, CLEAR_CACHE, INVERT_SIGN, 
+                   SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, file_object=None, progress_bar=None, gui_sorter=None)                  
 
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
     return 
 
 def online_flow(bin_path: Path, probe_path: Path,
-                offline_dir: Path, out_dir: Path, HOUR_SEC: float, do_CAR: bool, invert_sign: bool, data_dtype: str):
+                offline_dir: Path, out_dir: Path, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
@@ -306,8 +306,8 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops["settings"]["tmax"] = float(np.inf)
 
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, device,
-        do_CAR=do_CAR, invert_sign=invert_sign,
-        data_dtype=data_dtype, tmin=float(HOUR_SEC),
+        do_CAR=DO_CAR, invert_sign=INVERT_SIGN,
+        data_dtype=DATA_DTYPE, tmin=float(HOUR_SEC),
         tmax=float(np.inf),
         )
 
@@ -351,17 +351,12 @@ def main():
     ap.add_argument("--HOUR_SEC", type=float, required=True)
     args = ap.parse_args()
 
-    do_CAR = True
-    clear_cache = False
-    invert_sign = False
-    save_preprocessed_copy = False 
-    verbose_log = False
-    save_extra_vars = True
-    data_dtype = 'int16'
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    global DO_CAR = True, CLEAR_CACHE = False, INVERT_SIGN = False, SAVE_PREPROCESSED_COPY = False,
+    VERBOSE_LOG = False, SAVE_EXTRA_VARS = True, DATA_DTYPE = 'int16', 
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC do_CAR=do_CAR, invert_sign=invert_sign, data_dtype=data_dtype)
-    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC do_CAR=do_CAR, invert_sign=invert_sign, data_dtype=data_dtype)
+    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
+    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
 
 if __name__ == "__main__":
