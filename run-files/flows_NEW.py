@@ -314,9 +314,9 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     }
 
     settings = {**DEFAULT_SETTINGS, **user_settings}
-    settings["filename"] = str(bin_path)
-    settings["data_dir"] = str(bin_path.parent)
-    settings["results_dir"] = str(out_dir)
+    settings["filename"] = [Path(bin_path)]
+    settings["data_dir"] = settings["filename"][0].parent
+    settings["results_dir"] = Path(out_dir)
                      
     do_car = True
     clea_cache = False
@@ -330,12 +330,6 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     _sort(settings["filename"], settings["results_dir"], probe, settings, data_dtype, device, do_CAR,
           clear_cache, invert_sign, save_preprocessed_copy, verbose_log,
           save_extra_vars, file_object=None, progress_bar=None, gui_sorter=None)                  
-
-    spike_clusters = st[:, 1].astype(np.int32)
-    imin = bfile.imin
-
-    st = st.copy()
-    st[:, 1] = spike_clusters
 
     write_offline_stats(phy_used, out_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
