@@ -341,22 +341,29 @@ def online_flow(bin_path: Path, probe_path: Path,
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--bin", required=True, type=str)
-    ap.add_argument("--probe", required=True, type=str)
-    ap.add_argument("--out_offline", required=True, type=str)
-    ap.add_argument("--out_online", required=True, type=str)
-    ap.add_argument("--fs", required=True, type=float)
-    ap.add_argument("--nchan", required=True, type=int)
-    ap.add_argument("--HOUR_SEC", type=float, required=True)
-    args = ap.parse_args()
+  ap = argparse.ArgumentParser()
+  ap.add_argument("--bin", required=True, type=str)
+  ap.add_argument("--probe", required=True, type=str)
+  ap.add_argument("--out_offline", required=True, type=str)
+  ap.add_argument("--out_online", required=True, type=str)
+  ap.add_argument("--fs", required=True, type=float)
+  ap.add_argument("--nchan", required=True, type=int)
+  ap.add_argument("--HOUR_SEC", type=float, required=True)
+  args = ap.parse_args()
 
-    global DO_CAR = True, CLEAR_CACHE = False, INVERT_SIGN = False, SAVE_PREPROCESSED_COPY = False,
-    VERBOSE_LOG = False, SAVE_EXTRA_VARS = True, DATA_DTYPE = 'int16', 
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
-    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
+  global DO_CAR, CLEAR_CACHE, INVERT_SIGN, SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, DATA_DTYPE, DEVICE
+
+  DO_CAR = True
+  CLEAR_CACHE = False
+  INVERT_SIGN = False
+  SAVE_PREPROCESSED_COPY = False
+  VERBOSE_LOG = False
+  SAVE_EXTRA_VARS = True
+  DATA_DTYPE = 'int16'
+  DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  
+  offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
+  online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
 
 if __name__ == "__main__":
