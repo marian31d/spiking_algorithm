@@ -263,7 +263,7 @@ def build_bfile_from_ops(bin_path, probe, ops, device, do_CAR, invert_sign, data
 
 
 def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
-                 fs: float, nchan: int, HOUR_SEC: float):
+                 fs: float, nchan: int, HOUR_SEC: float, do_CAR: bool, invert_sign: bool, data_dtype: str):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
@@ -360,8 +360,8 @@ def main():
     data_dtype = 'int16'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
-    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
+    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC do_CAR=do_CAR, invert_sign=invert_sign, data_dtype=data_dtype)
+    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC do_CAR=do_CAR, invert_sign=invert_sign, data_dtype=data_dtype)
 
 
 if __name__ == "__main__":
