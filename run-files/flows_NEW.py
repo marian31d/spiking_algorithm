@@ -82,27 +82,24 @@ def export_for_online(ops: dict, Wall: torch.Tensor, out_dir: Path):
     logger.info(f"[EXPORT] Saved ops.npy + Wall.npy to: {out_dir}")
 
 
-def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np.ndarray, float: HOUR_SEC):
+def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, HOUR_SEC: float):
     """
     Writes offline statistics into:
-      - out_dir/offline_stats.txt
-      - out_dir/offline_stats.json
+      - results_dir/offline_stats.txt
+      - results_dir/offline_stats.json
 
     Uses (if present):
       - cluster_KSLabel.tsv or cluster_group.tsv
       - spike_clusters.npy
       - spike_templates.npy
     """
-    phy_dir = Path(phy_dir)
-    out_dir = Path(out_dir)
-
     # -------- read labels (cluster_id -> label) --------
     labels = {}
     labels_file_used = None
     candidates = [("cluster_KSLabel.tsv", "KSLabel"), ("cluster_group.tsv", "group")]
 
     for fname, labcol in candidates:
-        f = phy_dir / fname
+        f = results_dir / fname
         if not f.exists():
             continue
         lines = f.read_text().strip().splitlines()
@@ -143,8 +140,8 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
         mua_cluster_ids = sorted(set(mua_cluster_ids))
 
     # -------- spike/template arrays (optional) --------
-    spike_clusters_path = phy_dir / "spike_clusters.npy"
-    spike_templates_path = phy_dir / "spike_templates.npy"
+    spike_clusters_path = results_dir / "spike_clusters.npy"
+    spike_templates_path = results_dir / "spike_templates.npy"
 
     spike_clusters = None
     spike_templates = None
@@ -180,7 +177,7 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
         label_spike_counts = {str(k): int(v) for k, v in zip(u, cts)}
 
     summary = {
-        "phy_dir": str(phy_dir),
+        "results_dir": str(results_dir),
         "HOUR_SEC": HOUR_SEC,
         "labels_file_used": labels_file_used,
         "Wall_num_templates_K": K,
@@ -197,11 +194,11 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
         "note": "Wall is NOT filtered. These stats are for reporting only.",
     }
 
-    (out_dir / "offline_stats.json").write_text(json.dumps(summary, indent=2))
+    (results_dir / "offline_stats.json").write_text(json.dumps(summary, indent=2))
 
     lines = []
     lines.append("OFFLINE FLOW STATISTICS")
-    lines.append(f"phy_dir: {phy_dir}")
+    lines.append(f"results_dir: {results_dir}")
     lines.append(f"labels_file_used: {labels_file_used}")
     lines.append("")
     lines.append(f"Wall templates (K): {K}")
@@ -231,11 +228,11 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
             lines.append(f"  {k}: {v}")
 
     lines.append("")
-    lines.append(f"Wrote: {out_dir / 'offline_stats.txt'}")
-    lines.append(f"Wrote: {out_dir / 'offline_stats.json'}")
-    (out_dir / "offline_stats.txt").write_text("\n".join(lines))
+    lines.append(f"Wrote: {results_dir / 'offline_stats.txt'}")
+    lines.append(f"Wrote: {results_dir / 'offline_stats.json'}")
+    (results_dir / "offline_stats.txt").write_text("\n".join(lines))
 
-    logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {out_dir}")
+    logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
 
 def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
@@ -326,12 +323,12 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     save_extra_vars = True
     data_dtype = 'int16'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                     
-    _sort(settings["filename"], settings["results_dir"], probe, settings, data_dtype, device, do_CAR,
+    results_dir = settings["results_dir"]
+    _sort(settings["filename"], results_dir, probe, settings, data_dtype, device, do_CAR,
           clear_cache, invert_sign, save_preprocessed_copy, verbose_log,
           save_extra_vars, file_object=None, progress_bar=None, gui_sorter=None)                  
 
-    write_offline_stats(phy_used, out_dir, Wall, st, HOUR_SEC)
+    write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
     return 
 
@@ -352,9 +349,6 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     n_pcs = int(ops["settings"]["n_pcs"])
 
-    # Keep Wall in (K, Chan, PCs) for Phy export later
-    Wall_phy = Wall
-
     # Create a separate version for extract (K, PCs, Chan) if needed
     Wall_match = Wall
     if Wall_match.ndim == 3 and Wall_match.shape[-1] == n_pcs:
@@ -363,48 +357,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=device)
 
-    imin = bfile_rest.imin
-
-    phy_dir = out_dir / "phy"
-    phy_dir.mkdir(parents=True, exist_ok=True)
-
-    spike_clusters_raw = st[:, 1].astype(np.int64, copy=False)
-    spike_clusters, cluster_ids = remap_clusters_to_contiguous(spike_clusters_raw)
-
-    # Also overwrite st[:,1] so everything stays consistent
-    st = st.copy()
-    st[:, 1] = spike_clusters
-
-    # ---------------------------
-    # Export to Phy on CPU to avoid CUDA OOM AND keep correct Wall layout for save_to_phy
-    # save_to_phy expects Wall as (K, Chan, PCs) where PCs = n_pcs
-    # ---------------------------
-
-    Wall_export = Wall_phy
-    # If somehow Wall_phy is (K, PCs, Chan), convert back
-    if Wall_export.ndim == 3 and Wall_export.shape[-1] != n_pcs and Wall_export.shape[1] == n_pcs:
-        Wall_export = Wall_export.permute(0, 2, 1).contiguous()
-    Wall_export = Wall_export.detach().cpu()
-
-    # tF export on CPU
-    tF_export = tF.detach().cpu() if isinstance(tF, torch.Tensor) else tF
-
-    # ops['wPCA'] must be CPU torch tensor for save_to_phy (it calls .contiguous()).
-    if "wPCA" in ops:
-        if isinstance(ops["wPCA"], np.ndarray):
-            ops["wPCA"] = torch.from_numpy(ops["wPCA"]).contiguous()
-        elif isinstance(ops["wPCA"], torch.Tensor):
-            ops["wPCA"] = ops["wPCA"].detach().cpu().contiguous()
-
-    # Geometry fields must be numpy arrays (postprocessing uses torch.from_numpy on them)
-    for k in ["xc", "yc", "kcoords", "chanMap", "xblk", "yblk"]:
-        if k in ops and isinstance(ops[k], torch.Tensor):
-            ops[k] = ops[k].detach().cpu().numpy()
-
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    print("\n=== CHANNEL DEBUG BEFORE save_to_phy ===")
+    print("\n=== CHANNEL DEBUG ===")
     print("HOUR_SEC / tmin:", ops["settings"]["tmin"])
     print("probe_path:", probe_path)
     print("probe n_chan:", probe["n_chan"])
@@ -413,20 +366,6 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     print("ops n_chan_bin:", ops.get("n_chan_bin", None))
     print("ops n_chan:", ops.get("n_chan", None))
-
-
-    save_to_phy(
-        st=st,
-        clu=spike_clusters,
-        tF=tF_export,
-        Wall=Wall_export,
-        probe=probe,
-        ops=ops,
-        imin=imin,
-        results_dir=phy_dir,
-        data_dtype=ops["settings"].get("data_dtype", "int16"),
-        save_extra_vars=False,
-    )
 
     np.save(out_dir / "st.npy", st)
     np.save(out_dir / "tF.npy", tF_export.detach().cpu().numpy() if isinstance(tF_export, torch.Tensor) else np.array(tF_export))
