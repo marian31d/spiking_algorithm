@@ -36,19 +36,10 @@ from pathlib import Path
 import json
 
 from kilosort.io import load_probe, BinaryFiltered, save_ops, load_ops
-from kilosort.run_kilosort import (
-    _sort,   
-    initialize_ops,
-    compute_preprocessing,
-    compute_drift_correction,
-    detect_spikes,
-    cluster_spikes,
-)
-from kilosort import preprocessing
+from kilosort.run_kilosort import _sort
 from kilosort.parameters import DEFAULT_SETTINGS
 from kilosort.gui.logger import setup_logger
 from kilosort import template_matching
-from kilosort.io import save_to_phy
 
 """
 Two-stage Kilosort4 flow:
@@ -226,17 +217,13 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
     fs = float(s["fs"])
-    NT = int(ops.get("NT", s.get("batch_size", 60000)))
+    NT = int(s["batch_size"])
     nt = int(ops.get("nt", 61))
     nt0min = int(ops.get("nt0min", 20))
 
-    hp_filter = preprocessing.get_highpass_filter(
-        fs=fs,
-        cutoff=float(s.get("highpass_cutoff", 300.0)),
-        device=device,
-    )
+    hp_filter = ops["fwav"]
 
-    Wrot = ops.get("Wrot", None)
+    Wrot = ops["Wrot"]
     if Wrot is None:
         raise ValueError("ops['Wrot'] missing.")
 
@@ -255,8 +242,8 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
         nt=nt,
         nt0min=nt0min,
         chan_map=probe["chanMap"],
-        hp_filter=hp_filter,
-        whiten_mat=Wrot,
+        hp_filter=hp_filter,          # from ops
+        whiten_mat=Wrot,              # from ops
         dshift=dshift,
         device=device,
         do_CAR=bool(s.get("do_CAR", True)),
@@ -292,11 +279,6 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "batch_size": 60000,
     }
 
-    settings = {**DEFAULT_SETTINGS, **user_settings}
-    settings["filename"] = [Path(bin_path)]
-    settings["data_dir"] = settings["filename"][0].parent
-    settings["results_dir"] = Path(out_dir)
-                     
     do_CAR = True
     clear_cache = False
     invert_sign = False
@@ -305,7 +287,19 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     save_extra_vars = True
     data_dtype = 'int16'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    results_dir = settings["results_dir"]
+    results_dir = Path(out_dir)
+    
+    settings = {**DEFAULT_SETTINGS, **user_settings}
+    settings["filename"] = [Path(bin_path)]
+    settings["data_dir"] = settings["filename"][0].parent
+    settings["results_dir"] = results_dir
+    settings["data_dtype"] = data_dtype
+    settings["do_CAR"] = do_CAR
+    settings["invert_sign"] = invert_sign
+    settings["clear_cache"] = clear_cache
+    settings["save_preprocessed_copy"] = save_preprocessed_copy
+    settings["verbose_log"] = verbose_log
+    
     ops, st, clu, tF, Wall, _, _, _, _ =_sort(settings["filename"], 
                    results_dir, probe, settings, data_dtype, device, do_CAR, clear_cache, invert_sign, 
                    save_preprocessed_copy, verbose_log, save_extra_vars, file_object=None, progress_bar=None, gui_sorter=None)                  
@@ -335,7 +329,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     Wall_match = Wall
     # Prefer treating Wall as (K, Chan, PCs) and convert to (K, PCs, Chan) for extract
     if Wall_match.ndim == 3 and Wall_match.shape[2] == n_pcs:
-    Wall_match = Wall_match.permute(0, 2, 1).contiguous()
+        Wall_match = Wall_match.permute(0, 2, 1).contiguous()
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=device)
