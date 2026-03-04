@@ -246,10 +246,10 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
         whiten_mat=Wrot,              # from ops
         dshift=dshift,
         device=device,
-        do_CAR=bool(s.get("do_CAR", True)),
+        do_CAR= do_CAR,
         artifact_threshold=float(s.get("artifact_threshold", np.inf)),
-        invert_sign=bool(s.get("invert_sign", False)),
-        dtype=str(s.get("data_dtype", "int16")),
+        invert_sign=invert_sign,
+        dtype=data_dtype,
         tmin=float(tmin),
         tmax=float(tmax),
     )
@@ -280,26 +280,12 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "batch_size": 60000,
     }
 
-    do_CAR = True
-    clear_cache = False
-    invert_sign = False
-    save_preprocessed_copy = False 
-    verbose_log = False
-    save_extra_vars = True
-    data_dtype = 'int16'
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     results_dir = Path(out_dir)
     
     settings = {**DEFAULT_SETTINGS, **user_settings}
     settings["filename"] = [Path(bin_path)]
     settings["data_dir"] = settings["filename"][0].parent
     settings["results_dir"] = results_dir
-    settings["data_dtype"] = data_dtype
-    settings["do_CAR"] = do_CAR
-    settings["invert_sign"] = invert_sign
-    settings["clear_cache"] = clear_cache
-    settings["save_preprocessed_copy"] = save_preprocessed_copy
-    settings["verbose_log"] = verbose_log
     
     ops, st, clu, tF, Wall, _, _, _, _ =_sort(settings["filename"], 
                    results_dir, probe, settings, data_dtype, device, do_CAR, clear_cache, invert_sign, 
@@ -364,6 +350,15 @@ def main():
     ap.add_argument("--HOUR_SEC", type=float, required=True)
     args = ap.parse_args()
 
+    do_CAR = True
+    clear_cache = False
+    invert_sign = False
+    save_preprocessed_copy = False 
+    verbose_log = False
+    save_extra_vars = True
+    data_dtype = 'int16'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
     offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
     online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
