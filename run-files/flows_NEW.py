@@ -242,7 +242,7 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf):
         hp_filter=hp_filter,          # from ops
         whiten_mat=Wrot,              # from ops
         dshift=dshift,
-        device=device,
+        device=DEVICE,
         do_CAR=DO_CAR,
         artifact_threshold=float(s.get("artifact_threshold", np.inf)),
         invert_sign=INVERT_SIGN,
@@ -265,7 +265,6 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf):
 def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
                  fs: float, nchan: int, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
     
     user_settings = {
@@ -285,7 +284,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     settings["results_dir"] = results_dir
     
     ops, st, clu, tF, Wall, _, _, _, _ =_sort(settings["filename"], 
-                   results_dir, probe, settings, DATA_DTYPE, device, DO_CAR, CLEAR_CACHE, INVERT_SIGN, 
+                   results_dir, probe, settings, DATA_DTYPE, DEVICE, DO_CAR, CLEAR_CACHE, INVERT_SIGN, 
                    SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, file_object=None, progress_bar=None, gui_sorter=None)                  
 
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
@@ -295,12 +294,11 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
 def online_flow(bin_path: Path, probe_path: Path,
                 offline_dir: Path, out_dir: Path, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
 
-    ops = load_ops(offline_dir / "ops.npy", device=device)
+    ops = load_ops(offline_dir / "ops.npy", device=DEVICE)
     Wall_np = np.load(offline_dir / "Wall.npy")
-    Wall = torch.from_numpy(Wall_np).to(device)
+    Wall = torch.from_numpy(Wall_np).to(DEVICE)
 
     ops["settings"]["tmin"] = float(HOUR_SEC)
     ops["settings"]["tmax"] = float(np.inf)
@@ -316,7 +314,7 @@ def online_flow(bin_path: Path, probe_path: Path,
         Wall_match = Wall_match.permute(0, 2, 1).contiguous()
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
-    st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=device)
+    st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
 
     print("\n=== CHANNEL DEBUG ===")
     print("HOUR_SEC / tmin:", ops["settings"]["tmin"])
