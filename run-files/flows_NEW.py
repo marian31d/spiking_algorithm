@@ -61,26 +61,13 @@ Two-stage Kilosort4 flow:
 This version:
 - DOES NOT filter Wall
 - Writes offline statistics (good/mua counts, total clusters, etc.)
-- Exports Phy on CPU in ONLINE to avoid CUDA OOM inside save_to_phy()
-- Uses correct Wall layout for extract vs save_to_phy:
-    * extract() uses (K, PCs, Chan)
-    * save_to_phy() expects (K, Chan, PCs)
 """
 
 logger = setup_logger(__name__)
 
-
 def ensure_dir(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
-
-
-def export_for_online(ops: dict, Wall: torch.Tensor, out_dir: Path):
-    out_dir = ensure_dir(out_dir)
-    save_ops(ops, results_dir=out_dir)
-    np.save(out_dir / "Wall.npy", Wall.detach().cpu().numpy())
-    logger.info(f"[EXPORT] Saved ops.npy + Wall.npy to: {out_dir}")
-
 
 def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, HOUR_SEC: float):
     """
@@ -291,7 +278,7 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
 
 
 def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
-                 fs: float, nchan: int, dtype: str, HOUR_SEC: float):
+                 fs: float, nchan: int, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
@@ -302,12 +289,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
         "n_pcs": 6,
-        "nearest_chans": 10,
-        "position_limit": 100.0,
-        "nt": 61,
-        "nt0min": 20,
         "batch_size": 60000,
-        "highpass_cutoff": 300.0,
     }
 
     settings = {**DEFAULT_SETTINGS, **user_settings}
@@ -315,8 +297,8 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     settings["data_dir"] = settings["filename"][0].parent
     settings["results_dir"] = Path(out_dir)
                      
-    do_car = True
-    clea_cache = False
+    do_CAR = True
+    clear_cache = False
     invert_sign = False
     save_preprocessed_copy = False 
     verbose_log = False
@@ -324,22 +306,22 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     data_dtype = 'int16'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     results_dir = settings["results_dir"]
-    _sort(settings["filename"], results_dir, probe, settings, data_dtype, device, do_CAR,
-          clear_cache, invert_sign, save_preprocessed_copy, verbose_log,
-          save_extra_vars, file_object=None, progress_bar=None, gui_sorter=None)                  
+    ops, st, clu, tF, Wall, _, _, _, _ =_sort(settings["filename"], 
+                   results_dir, probe, settings, data_dtype, device, do_CAR, clear_cache, invert_sign, 
+                   save_preprocessed_copy, verbose_log, save_extra_vars, file_object=None, progress_bar=None, gui_sorter=None)                  
 
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
     return 
 
 def online_flow(bin_path: Path, probe_path: Path,
-                exported_offline_dir: Path, out_dir: Path, HOUR_SEC: float):
+                offline_dir: Path, out_dir: Path, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
 
-    ops = load_ops(exported_offline_dir / "ops.npy", device=device)
-    Wall_np = np.load(exported_offline_dir / "Wall.npy")
+    ops = load_ops(offline_dir / "ops.npy", device=device)
+    Wall_np = np.load(offline_dir / "Wall.npy")
     Wall = torch.from_numpy(Wall_np).to(device)
 
     ops["settings"]["tmin"] = float(HOUR_SEC)
@@ -351,8 +333,9 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     # Create a separate version for extract (K, PCs, Chan) if needed
     Wall_match = Wall
-    if Wall_match.ndim == 3 and Wall_match.shape[-1] == n_pcs:
-        Wall_match = Wall_match.permute(0, 2, 1).contiguous()
+    # Prefer treating Wall as (K, Chan, PCs) and convert to (K, PCs, Chan) for extract
+    if Wall_match.ndim == 3 and Wall_match.shape[2] == n_pcs:
+    Wall_match = Wall_match.permute(0, 2, 1).contiguous()
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=device)
@@ -368,7 +351,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     print("ops n_chan:", ops.get("n_chan", None))
 
     np.save(out_dir / "st.npy", st)
-    np.save(out_dir / "tF.npy", tF_export.detach().cpu().numpy() if isinstance(tF_export, torch.Tensor) else np.array(tF_export))
+    np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
     save_ops(ops, results_dir=out_dir)
 
     logger.info("[ONLINE] Done.")
@@ -383,11 +366,10 @@ def main():
     ap.add_argument("--out_online", required=True, type=str)
     ap.add_argument("--fs", required=True, type=float)
     ap.add_argument("--nchan", required=True, type=int)
-    ap.add_argument("--dtype", default="int16", type=str)
     ap.add_argument("--HOUR_SEC", type=float, required=True)
     args = ap.parse_args()
 
-    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.dtype, args.HOUR_SEC)
+    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
     online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
 
