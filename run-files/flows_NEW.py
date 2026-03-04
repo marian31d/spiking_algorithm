@@ -223,7 +223,7 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
 
     hp_filter = ops["fwav"]
 
-    Wrot = ops["Wrot"]
+    Wrot = ops.get("Wrot", None)
     if Wrot is None:
         raise ValueError("ops['Wrot'] missing.")
 
@@ -254,6 +254,7 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
         tmax=float(tmax),
     )
 
+    # pad dshift to n_batches if needed (keeps shapes aligned)
     if bfile.dshift is not None:
         nb = int(bfile.n_batches)
         ds = np.asarray(bfile.dshift).reshape(-1)
