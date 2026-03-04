@@ -243,7 +243,7 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf):
         whiten_mat=Wrot,              # from ops
         dshift=dshift,
         device=device,
-        do_CAR= DO_CAR,
+        do_CAR=DO_CAR,
         artifact_threshold=float(s.get("artifact_threshold", np.inf)),
         invert_sign=INVERT_SIGN,
         dtype=DATA_DTYPE,
@@ -305,11 +305,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops["settings"]["tmin"] = float(HOUR_SEC)
     ops["settings"]["tmax"] = float(np.inf)
 
-    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, device,
-        do_CAR=DO_CAR, invert_sign=INVERT_SIGN,
-        data_dtype=DATA_DTYPE, tmin=float(HOUR_SEC),
-        tmax=float(np.inf),
-        )
+    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf))
 
     n_pcs = int(ops["settings"]["n_pcs"])
 
