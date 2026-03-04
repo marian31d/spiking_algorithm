@@ -212,8 +212,7 @@ def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, H
 
     logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
-
-def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
+def build_bfile_from_ops(bin_path, probe, ops, device, do_CAR, invert_sign, data_dtype, tmin=0.0, tmax=np.inf):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
     fs = float(s["fs"])
@@ -224,8 +223,6 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
     hp_filter = ops["fwav"]
 
     Wrot = ops.get("Wrot", None)
-    if Wrot is None:
-        raise ValueError("ops['Wrot'] missing.")
 
     dshift = ops.get("dshift", None)
     if dshift is not None:
@@ -296,7 +293,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     return 
 
 def online_flow(bin_path: Path, probe_path: Path,
-                offline_dir: Path, out_dir: Path, HOUR_SEC: float):
+                offline_dir: Path, out_dir: Path, HOUR_SEC: float, do_CAR: bool, invert_sign: bool, data_dtype: str):
     out_dir = ensure_dir(out_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
@@ -308,7 +305,11 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops["settings"]["tmin"] = float(HOUR_SEC)
     ops["settings"]["tmax"] = float(np.inf)
 
-    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, device, float(HOUR_SEC), float(np.inf))
+    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, device,
+        do_CAR=do_CAR, invert_sign=invert_sign,
+        data_dtype=data_dtype, tmin=float(HOUR_SEC),
+        tmax=float(np.inf),
+        )
 
     n_pcs = int(ops["settings"]["n_pcs"])
 
