@@ -327,7 +327,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     print("ops n_chan:", ops.get("n_chan", None))
   
     templates = np.load(offline_dir / "templates.npy")
-    np.save(out_dir / "templates,npy", templates)
+    np.save(out_dir / "templates.npy", templates)
     np.save(out_dir / "st.npy", st)
     np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
     save_ops(ops, results_dir=out_dir)
