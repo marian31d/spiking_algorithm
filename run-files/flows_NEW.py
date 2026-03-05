@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+#This version of flows is deteministic and uses the exact same functions the gui uses to run
 # =========================
 # DETERMINISM / REPRODUCIBILITY (must be before torch import)
 # =========================
@@ -330,6 +330,16 @@ def online_flow(bin_path: Path, probe_path: Path,
     np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
     save_ops(ops, results_dir=out_dir)
 
+    st = np.asarray(st)
+    
+    spike_times = st[:, 0].astype(np.int64, copy=False)
+    spike_clusters = st[:, 1].astype(np.int64, copy=False)
+    spike_clusters = np.load(out_dir / "spike_clusters.npy")
+    
+    np.save(out_dir / "spike_times.npy", spike_times)
+    np.save(out_dir / "spike_clusters.npy", spike_clusters)
+    np.save(out_dir / "spike_templates.npy", spike_clusters.astype(np.int64, copy=False))
+                  
     logger.info("[ONLINE] Done.")
     return
 
