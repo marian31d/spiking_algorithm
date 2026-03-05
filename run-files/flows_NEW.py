@@ -326,8 +326,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     print("ops n_chan_bin:", ops.get("n_chan_bin", None))
     print("ops n_chan:", ops.get("n_chan", None))
   
-    templates = np.load(offline_dir / "templates.npy")
-    np.save(out_dir / "templates.npy", templates)
+
     np.save(out_dir / "st.npy", st)
     np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
     save_ops(ops, results_dir=out_dir)
@@ -335,14 +334,21 @@ def online_flow(bin_path: Path, probe_path: Path,
     st = np.asarray(st)
     
     spike_times = st[:, 0].astype(np.int64, copy=False)
-    spike_clusters = st[:, 1].astype(np.int64, copy=False)
+    spike_templates = st[:, 1].astype(np.int64, copy=False)
     
+    # If you want "clusters" for phy-style tools, define cluster = template for online
+    spike_clusters = spike_templates
+
     np.save(out_dir / "spike_times.npy", spike_times)
+    np.save(out_dir / "spike_templates.npy", spike_templates)
     np.save(out_dir / "spike_clusters.npy", spike_clusters)
-    np.save(out_dir / "spike_templates.npy", spike_clusters.astype(np.int64, copy=False))
+
+    templates = np.load(offline_dir / "templates.npy")
+    np.save(out_dir / "templates.npy", templates)
                   
     logger.info("[ONLINE] Done.")
     return
+
 
 
 def main():
