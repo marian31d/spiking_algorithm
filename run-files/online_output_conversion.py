@@ -1,3 +1,6 @@
+#This file converts the st output from online in order to get 
+#spike_times, spike_cluster and spike_templates
+
 import numpy as np
 from pathlib import Path
 
