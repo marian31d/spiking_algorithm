@@ -36,6 +36,12 @@ python compare_templates_timewindow.py \
   --t_start 3000000 \
   --t_end   6000000 \
   --out /path/to/outdir
+
+Outputs:
+  - Does not output spike_times or spike_clusters from the online phase
+    only tF, st and ops. so in order to generate the earlier for the comparison
+    script between gui and flows we need to take tF and convert it to spike times
+    and clusters. see the script online_output_conversion.py.
 """
 
 import argparse
