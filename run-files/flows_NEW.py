@@ -336,7 +336,6 @@ def online_flow(bin_path: Path, probe_path: Path,
     
     spike_times = st[:, 0].astype(np.int64, copy=False)
     spike_clusters = st[:, 1].astype(np.int64, copy=False)
-    spike_clusters = np.load(out_dir / "spike_clusters.npy")
     
     np.save(out_dir / "spike_times.npy", spike_times)
     np.save(out_dir / "spike_clusters.npy", spike_clusters)
