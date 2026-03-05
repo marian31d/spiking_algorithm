@@ -318,7 +318,7 @@ def save_heatmap(mat: np.ndarray, title: str, path: Path, cbar_label: str):
     plt.imshow(mat, aspect="auto")
     plt.colorbar(label=cbar_label)
     plt.title(title)
-    plt.xlabel("FLOW clusters (columns)")
+    plt.xlabel("FLOW templates (columns)")
     plt.ylabel("GUI clusters (rows)")
     plt.savefig(path, dpi=300, bbox_inches="tight")
     plt.close()
@@ -346,7 +346,8 @@ def main():
     gui_times = np.load(gui_phy / "spike_times.npy").astype(np.int64, copy=False).reshape(-1)
     gui_clu   = np.load(gui_phy / "spike_clusters.npy").astype(np.int64, copy=False).reshape(-1)
     flow_times = np.load(flow_phy / "spike_times.npy").astype(np.int64, copy=False).reshape(-1)
-    flow_clu   = np.load(flow_phy / "spike_clusters.npy").astype(np.int64, copy=False).reshape(-1)
+    # ONLINE has no clusters → use templates as labels
+    flow_clu = np.load(flow_phy / "spike_templates.npy").astype(np.int64, copy=False).reshape(-1)
 
     # Optional time window filter (applied to BOTH GUI and FLOW)
     t_start = int(args.t_start*20000)
