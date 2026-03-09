@@ -340,16 +340,27 @@ def online_flow(bin_path: Path, probe_path: Path,
     print("ops n_chan:", ops.get("n_chan", None))
   
 
-    np.save(out_dir / "st.npy", st)
+    st = np.asarray(st)
+
+    # Shift spike times from relative (online window) to absolute (full file) coordinates.
+    # extract() counts samples from batch 0 of bfile_rest, which starts at HOUR_SEC seconds.
+    # Adding HOUR_SEC * fs converts to the same absolute sample space as the GUI spike_times.npy.
+    fs = float(ops["settings"]["fs"])
+    sample_offset = np.int64(round(HOUR_SEC * fs))
+    st_abs = st.copy()
+    st_abs[:, 0] += sample_offset
+    logger.info(f"[ONLINE] Shifted spike times by +{sample_offset} samples ({HOUR_SEC}s * {fs}Hz) -> absolute coordinates.")
+    logger.info(f"[ONLINE] spike_times range: {int(st_abs[:,0].min())} - {int(st_abs[:,0].max())} samples")
+
+    # Save st.npy in absolute coordinates too (consistent with spike_times.npy)
+    np.save(out_dir / "st.npy", st_abs)
     np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
     save_ops(ops, results_dir=out_dir)
 
-    st = np.asarray(st)
-    
-    spike_times = st[:, 0].astype(np.int64, copy=False)
-    spike_templates = st[:, 1].astype(np.int64, copy=False)
-    
-    # If you want "clusters" for phy-style tools, define cluster = template for online
+    spike_times = st_abs[:, 0].astype(np.int64, copy=False)
+    spike_templates = st_abs[:, 1].astype(np.int64, copy=False)
+
+    # For phy-style tools: cluster = template for online (no merge/split step)
     spike_clusters = spike_templates
 
     np.save(out_dir / "spike_times.npy", spike_times)
