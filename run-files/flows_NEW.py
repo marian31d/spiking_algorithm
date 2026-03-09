@@ -307,12 +307,17 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     n_pcs = int(ops["settings"]["n_pcs"])
 
-    # Create a separate version for extract (K, PCs, Chan) if needed
-    Wall_match = Wall
-    # Prefer treating Wall as (K, Chan, PCs) and convert to (K, PCs, Chan) for extract
-    if Wall_match.ndim == 3 and Wall_match.shape[2] == n_pcs:
-        Wall_match = Wall_match.permute(0, 2, 1).contiguous()
+    # Wall.npy is saved by _sort as (K, n_pcs, n_chan) — the PC-projected form
+    # that extract() expects directly. No permutation needed.
+    # Shape must be: (K, n_pcs, n_chan)
+    assert Wall.ndim == 3, f"Expected Wall shape (K, n_pcs, n_chan), got {Wall.shape}"
+    assert Wall.shape[1] == n_pcs, (
+        f"Wall.shape[1]={Wall.shape[1]} != n_pcs={n_pcs}. "
+        f"Wall.npy may be corrupt or saved in wrong format. Full shape: {Wall.shape}"
+    )
+    Wall_match = Wall  # already (K, n_pcs, n_chan)
 
+    logger.info(f"[ONLINE] Wall shape: {tuple(Wall_match.shape)} — (K={Wall.shape[0]}, n_pcs={Wall.shape[1]}, n_chan={Wall.shape[2]})")
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
 
