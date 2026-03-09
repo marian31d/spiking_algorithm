@@ -212,7 +212,7 @@ def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, H
 
     logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
-def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf):
+def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshift=False):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
     fs = float(s["fs"])
@@ -224,12 +224,19 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf):
 
     Wrot = ops.get("Wrot", None)
 
-    dshift = ops.get("dshift", None)
-    if dshift is not None:
-        if isinstance(dshift, torch.Tensor):
-            dshift = dshift.detach().cpu().numpy()
-        else:
-            dshift = np.asarray(dshift)
+    if zero_dshift:
+        # Online/SoC phase: no drift correction applied.
+        # The SoC does not have access to drift estimates — pass zeros so
+        # BinaryFiltered applies no spatial shift to the data.
+        dshift = None
+        logger.info("[ONLINE] dshift zeroed out — no drift correction applied.")
+    else:
+        dshift = ops.get("dshift", None)
+        if dshift is not None:
+            if isinstance(dshift, torch.Tensor):
+                dshift = dshift.detach().cpu().numpy()
+            else:
+                dshift = np.asarray(dshift)
 
     bfile = BinaryFiltered(
         filename=str(bin_path),
@@ -251,7 +258,7 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf):
         tmax=float(tmax),
     )
 
-    # pad dshift to n_batches if needed (keeps shapes aligned)
+    # pad dshift to n_batches if needed (keeps shapes aligned) — offline only
     if bfile.dshift is not None:
         nb = int(bfile.n_batches)
         ds = np.asarray(bfile.dshift).reshape(-1)
@@ -303,7 +310,8 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops["settings"]["tmin"] = float(HOUR_SEC)
     ops["settings"]["tmax"] = float(np.inf)
 
-    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf))
+    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
+                                      zero_dshift=True)  # SoC has no drift estimates
 
     n_pcs = int(ops["settings"]["n_pcs"])
 
