@@ -296,6 +296,9 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
 
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
+                   
+    del Wall, st, clu, tF
+    torch.cuda.empty_cache()
     return 
 
 def online_flow(bin_path: Path, probe_path: Path,
@@ -328,6 +331,10 @@ def online_flow(bin_path: Path, probe_path: Path,
     logger.info(f"[ONLINE] Wall shape: {tuple(Wall_match.shape)} — (K={Wall.shape[0]}, n_pcs={Wall.shape[1]}, n_chan={Wall.shape[2]})")
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
+
+    # Free GPU memory immediately after extract
+    del bfile_rest
+    torch.cuda.empty_cache()
 
     print("\n=== CHANNEL DEBUG ===")
     print("HOUR_SEC / tmin:", ops["settings"]["tmin"])
@@ -371,6 +378,9 @@ def online_flow(bin_path: Path, probe_path: Path,
     np.save(out_dir / "templates.npy", templates)
                   
     logger.info("[ONLINE] Done.")
+
+    del Wall, Wall_match, tF
+    torch.cuda.empty_cache()
     return
 
 
@@ -399,7 +409,6 @@ def main():
   
   offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
   online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
-
 
 if __name__ == "__main__":
     main()
