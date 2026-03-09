@@ -379,7 +379,7 @@ def online_flow(bin_path: Path, probe_path: Path,
                   
     logger.info("[ONLINE] Done.")
 
-    del Wall, Wall_match, tF
+    del Wall, tF
     torch.cuda.empty_cache()
     return
 
