@@ -4,6 +4,7 @@
 # DETERMINISM / REPRODUCIBILITY (must be before torch import)
 # =========================
 import os
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1" #For debugging purposes in CUDA
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 os.environ["PYTHONHASHSEED"] = "0"
 os.environ["OMP_NUM_THREADS"] = "1"
