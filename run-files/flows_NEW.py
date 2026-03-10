@@ -224,19 +224,29 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshif
 
     Wrot = ops.get("Wrot", None)
 
+    # Extract dshift from ops, converting to numpy if needed
+    dshift = ops.get("dshift", None)
+    if dshift is not None:
+        if isinstance(dshift, torch.Tensor):
+            dshift = dshift.detach().cpu().numpy()
+        else:
+            dshift = np.asarray(dshift)
+
     if zero_dshift:
-        # Online/SoC phase: no drift correction applied.
-        # The SoC does not have access to drift estimates — pass zeros so
-        # BinaryFiltered applies no spatial shift to the data.
-        dshift = None
-        logger.info("[ONLINE] dshift zeroed out — no drift correction applied.")
-    else:
-        dshift = ops.get("dshift", None)
+        # Online/SoC phase: zero out drift correction.
+        # Pass explicit zeros (not None) so BinaryFiltered applies zero shift
+        # per batch without recomputing drift from scratch.
         if dshift is not None:
-            if isinstance(dshift, torch.Tensor):
-                dshift = dshift.detach().cpu().numpy()
-            else:
-                dshift = np.asarray(dshift)
+            dshift = np.zeros_like(dshift)
+        else:
+            # ops had no dshift — compute n_batches from file size (tmax may be np.inf)
+            n_chan_bin = int(ops["settings"]["n_chan_bin"])
+            bytes_per_sample = 2  # int16
+            total_samples = os.path.getsize(str(bin_path)) // (n_chan_bin * bytes_per_sample)
+            online_start_sample = int(round(float(ops["settings"]["tmin"]) * float(ops["settings"]["fs"])))
+            n_batches_online = int(np.ceil((total_samples - online_start_sample) / float(ops["settings"]["batch_size"])))
+            dshift = np.zeros(n_batches_online, dtype=np.float32)
+        logger.info(f"[ONLINE] dshift zeroed ({len(dshift)} batches) — no drift correction applied.")
 
     bfile = BinaryFiltered(
         filename=str(bin_path),
@@ -296,9 +306,6 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
 
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
-                   
-    del Wall, st, clu, tF
-    torch.cuda.empty_cache()
     return 
 
 def online_flow(bin_path: Path, probe_path: Path,
@@ -331,10 +338,6 @@ def online_flow(bin_path: Path, probe_path: Path,
     logger.info(f"[ONLINE] Wall shape: {tuple(Wall_match.shape)} — (K={Wall.shape[0]}, n_pcs={Wall.shape[1]}, n_chan={Wall.shape[2]})")
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
-
-    # Free GPU memory immediately after extract
-    del bfile_rest
-    torch.cuda.empty_cache()
 
     print("\n=== CHANNEL DEBUG ===")
     print("HOUR_SEC / tmin:", ops["settings"]["tmin"])
@@ -378,9 +381,6 @@ def online_flow(bin_path: Path, probe_path: Path,
     np.save(out_dir / "templates.npy", templates)
                   
     logger.info("[ONLINE] Done.")
-
-    del Wall, tF
-    torch.cuda.empty_cache()
     return
 
 
@@ -399,7 +399,7 @@ def main():
   global DO_CAR, CLEAR_CACHE, INVERT_SIGN, SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, DATA_DTYPE, DEVICE
 
   DO_CAR = True
-  CLEAR_CACHE = True
+  CLEAR_CACHE = False
   INVERT_SIGN = False
   SAVE_PREPROCESSED_COPY = False
   VERBOSE_LOG = False
@@ -409,6 +409,7 @@ def main():
   
   offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
   online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
+
 
 if __name__ == "__main__":
     main()
