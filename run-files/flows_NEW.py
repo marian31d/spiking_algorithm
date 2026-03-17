@@ -296,7 +296,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "n_chan_bin": int(nchan),
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
-        "n_pcs": 6,
+        "n_pcs": 3,
         "batch_size": 10000,
     }
 
@@ -321,6 +321,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     probe = load_probe(probe_path)
 
     ops = load_ops(offline_dir / "ops.npy", device=DEVICE)
+    ops['max_iterations'] = 2
     Wall_np = np.load(offline_dir / "Wall.npy")
     Wall = torch.from_numpy(Wall_np).to(DEVICE)
 
