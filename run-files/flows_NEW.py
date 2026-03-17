@@ -321,6 +321,18 @@ def online_flow(bin_path: Path, probe_path: Path,
     probe = load_probe(probe_path)
 
     ops = load_ops(offline_dir / "ops.npy", device=DEVICE)
+    # --- Lower Wrot Precision ---
+    if 'Wrot' in ops:
+      # Round to 4 decimal places
+      # We use .ceil() logic for "round up" or simply np.round if standard rounding is okay
+      # For a true "round up" at 4 decimal places:
+      precision = 10000
+      if isinstance(ops['Wrot'], torch.Tensor):
+          ops['Wrot'] = torch.ceil(ops['Wrot'] * precision) / precision
+      else:
+          ops['Wrot'] = np.ceil(ops['Wrot'] * precision) / precision
+      logger.info("[ONLINE] Wrot matrix precision reduced to 4 decimal places (rounded up).")
+    
     ops['max_iterations'] = 2
     Wall_np = np.load(offline_dir / "Wall.npy")
     Wall = torch.from_numpy(Wall_np).to(DEVICE)
@@ -330,7 +342,7 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
                                       zero_dshift=True)  # SoC has no drift estimates
-
+    
     n_pcs = int(ops["settings"]["n_pcs"])
 
     assert Wall.ndim == 3, f"Expected 3D Wall, got shape {Wall.shape}"
@@ -346,6 +358,9 @@ def online_flow(bin_path: Path, probe_path: Path,
             f"Could not identify n_pcs axis in Wall. "
             f"Wall shape={Wall.shape}, n_pcs={n_pcs}"
         )
+    # --- Lower Nearest Channels ---
+    ops['settings']['nearest_chans'] = 4
+    logger.info(f"[ONLINE] nearest_chans reduced to {ops['settings']['nearest_chans']}.")
 
     logger.info(f"[ONLINE] Wall shape: {tuple(Wall_match.shape)} — (K={Wall.shape[0]}, n_pcs={Wall.shape[1]}, n_chan={Wall.shape[2]})")
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
