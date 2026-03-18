@@ -320,72 +320,49 @@ def save_heatmap(mat: np.ndarray, title: str, path: Path, cbar_label: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gui_phy", required=True, type=str)
-    ap.add_argument("--flow_phy", required=True, type=str)
-    ap.add_argument("--tol", default=0, type=int)
+    ap.add_argument("--gui_phy", required=True, type=str, help="Path to GUI results")
+    ap.add_argument("--flow_online", required=True, type=str, help="Path to Online FLOW results")
+    ap.add_argument("--t_start", required=True, type=float, help="Start time of online phase in SECONDS")
+    ap.add_argument("--t_duration", default=-1, type=float, help="Duration to compare in SECONDS (-1 for rest of file)")
+    ap.add_argument("--tol", default=12, type=int, help="Spike jitter tolerance (samples)")
     ap.add_argument("--out", default=".", type=str)
-    # Optional time window in SAMPLE units (same units as spike_times.npy)
-    ap.add_argument("--t_start", default=0, type=int,
-                    help="Only use spikes with spike_times >= t_start (in seconds). Default: 0 (use all).")
-    ap.add_argument("--t_end", default=-1, type=int,
-                    help="If >0, only use spikes with spike_times < t_end (in seconds). Default: -1 (no end).")
     args = ap.parse_args()
 
-    gui_phy = Path(args.gui_phy).resolve()
-    flow_phy = Path(args.flow_phy).resolve()
-    out_dir = Path(args.out).resolve()
+    fs = 20000 
+    gui_phy = Path(args.gui_phy)
+    online_phy = Path(args.flow_online)
+    out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("Reading spike times/clusters...")
-    gui_times = np.load(gui_phy / "spike_times.npy").astype(np.int64, copy=False).reshape(-1)
-    gui_clu   = np.load(gui_phy / "spike_clusters.npy").astype(np.int64, copy=False).reshape(-1)
-    flow_times = np.load(flow_phy / "spike_times.npy").astype(np.int64, copy=False).reshape(-1)
-    flow_clu   = np.load(flow_phy / "spike_clusters.npy").astype(np.int64, copy=False).reshape(-1)
+    # 1. Load Data
+    print("Loading Spike Data...")
+    gui_times = np.load(gui_phy / "spike_times.npy").reshape(-1)
+    gui_clu   = np.load(gui_phy / "spike_clusters.npy").reshape(-1)
+    
+    flow_times = np.load(online_phy / "spike_times.npy").reshape(-1)
+    flow_clu   = np.load(online_phy / "spike_clusters.npy").reshape(-1)
 
-    # Optional time window filter (applied to BOTH GUI and FLOW)
-    t_start = int(args.t_start*20000)
-    t_end = int(args.t_end*20000)
-    if t_start < 0:
-        raise ValueError("--t_start must be >= 0 (units: samples).")
-    if t_end > 0 and t_end <= t_start:
-        raise ValueError("--t_end must be > --t_start (units: samples).")
+    # 2. Strict Time Window Alignment
+    # We define the window based on when your Online Phase actually started
+    start_sample = int(args.t_start * fs)
+    end_sample = start_sample + int(args.t_duration * fs) if args.t_duration > 0 else np.inf
 
-    if t_start > 0 or t_end > 0:
-        def _mask_times(tt: np.ndarray) -> np.ndarray:
-            if t_end > 0:
-                return (tt >= t_start) & (tt < t_end)
-            return (tt >= t_start)
+    def apply_mask(t, c):
+        mask = (t >= start_sample) & (t < end_sample)
+        return t[mask], c[mask]
 
-        gui_mask = _mask_times(gui_times)
+    gui_t_win, gui_c_win = apply_mask(gui_times, gui_clu)
+    flow_t_win, flow_c_win = apply_mask(flow_times, flow_clu)
 
-        print(f"Applying time window: t_start={t_start}, t_end={'∞' if t_end <= 0 else t_end} (samples)")
-        print(f"  GUI spikes kept:  {int(gui_mask.sum())}/{int(gui_times.size)}")
+    print(f"Comparing window: {args.t_start}s to {args.t_start + args.t_duration if args.t_duration > 0 else 'End'}")
+    print(f"GUI spikes in window: {len(gui_t_win)}")
+    print(f"FLOW spikes in window: {len(flow_t_win)}")
 
-        gui_times = gui_times[gui_mask]
-        gui_clu = gui_clu[gui_mask]
-    else:
-        gui_mask = None
-
-    print("Reading templates for template similarity (if available)...")
-    gui_templates, gui_spike_templates = _load_templates_and_spike_templates(gui_phy, spike_mask=gui_mask)
-    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(flow_phy)
-
-    have_templates = (gui_templates is not None) and (flow_templates is not None)
-    if not have_templates:
-        print("  (templates.npy / spike_templates.npy missing in GUI or FLOW; template similarity will be skipped)")
-
-
-
-    if gui_times.shape[0] != gui_clu.shape[0]:
-        raise RuntimeError("GUI spike_times/spike_clusters length mismatch.")
-    if flow_times.shape[0] != flow_clu.shape[0]:
-        raise RuntimeError("FLOW spike_times/spike_clusters length mismatch.")
-
-    print(f"Matching spikes by time (tol={args.tol} samples)...")
-    if args.tol <= 0:
-        i_gui, i_flow = match_spike_times_exact(gui_times, flow_times)
-    else:
-        i_gui, i_flow = match_spike_times_tol(gui_times, flow_times, tol=args.tol)
+    # 3. Perform Matching
+    # match_spike_times_tol returns indices of matching pairs
+    i_gui, i_flow = match_spike_times_tol(gui_t_win, flow_t_win, tol=args.tol)
+    
+    print(f"Matched Pairs found: {len(i_gui)}")
 
     n_match = int(len(i_gui))
     if n_match == 0:
