@@ -320,94 +320,100 @@ def online_flow(bin_path: Path, probe_path: Path,
     out_dir = ensure_dir(out_dir)
     probe = load_probe(probe_path)
 
+    # Load resources from offline/GUI run
     ops = load_ops(offline_dir / "ops.npy", device=DEVICE)
-    # --- Lower Wrot Precision ---
-    if 'Wrot' in ops:
-      # Round to 4 decimal places
-      # We use .ceil() logic for "round up" or simply np.round if standard rounding is okay
-      # For a true "round up" at 4 decimal places:
-      precision = 10000
-      if isinstance(ops['Wrot'], torch.Tensor):
-          ops['Wrot'] = torch.ceil(ops['Wrot'] * precision) / precision
-      else:
-          ops['Wrot'] = np.ceil(ops['Wrot'] * precision) / precision
-      logger.info("[ONLINE] Wrot matrix precision reduced to 4 decimal places (rounded up).")
-    
-    ops['max_iterations'] = 2
     Wall_np = np.load(offline_dir / "Wall.npy")
     Wall = torch.from_numpy(Wall_np).to(DEVICE)
 
-    ops["settings"]["tmin"] = float(HOUR_SEC)
-    ops["settings"]["tmax"] = float(np.inf)
-
-    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
-                                      zero_dshift=True)  # SoC has no drift estimates
+    # ======================================================
+    # SIMULATE SoC HARDWARE CONSTRAINTS
+    # ======================================================
+    # 1. Lower Wrot Precision (4 digits after decimal point)
+    if 'Wrot' in ops:
+        precision = 10000
+        ops['Wrot'] = torch.round(ops['Wrot'] * precision) / precision
+        logger.info("[ONLINE] Wrot precision reduced to 4 decimal places.")
     
+    # 2. Lower Nearest Channels (Reduce memory bandwidth)
+    ops['settings']['nearest_chans'] = 4
+    
+    # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
+    ops['settings']['max_iterations'] = 2 
+
+    # Set window for the 'rest' of the data
+    ops['settings']['tmin'] = float(HOUR_SEC)
+    ops['settings']['tmax'] = float(np.inf)
+
+    # Build binary file object with zero drift correction
+    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
+                                      zero_dshift=True)
+
     n_pcs = int(ops["settings"]["n_pcs"])
-
-    assert Wall.ndim == 3, f"Expected 3D Wall, got shape {Wall.shape}"
-
     if Wall.shape[1] == n_pcs:
-        # already (K, n_pcs, n_chan)
         Wall_match = Wall
     elif Wall.shape[2] == n_pcs:
-        # saved as (K, n_chan, n_pcs) -> convert to (K, n_pcs, n_chan)
         Wall_match = Wall.permute(0, 2, 1).contiguous()
     else:
-        raise AssertionError(
-            f"Could not identify n_pcs axis in Wall. "
-            f"Wall shape={Wall.shape}, n_pcs={n_pcs}"
-        )
-    # --- Lower Nearest Channels ---
-    ops['settings']['nearest_chans'] = 4
-    logger.info(f"[ONLINE] nearest_chans reduced to {ops['settings']['nearest_chans']}.")
+        raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
 
-    logger.info(f"[ONLINE] Wall shape: {tuple(Wall_match.shape)} — (K={Wall.shape[0]}, n_pcs={Wall.shape[1]}, n_chan={Wall.shape[2]})")
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
+    
+    # Core SoC simulation: Template Matching
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
 
-    print("\n=== CHANNEL DEBUG ===")
-    print("HOUR_SEC / tmin:", ops["settings"]["tmin"])
-    print("probe_path:", probe_path)
-    print("probe n_chan:", probe["n_chan"])
-    cm = probe["chanMap"]
-    print("chanMap min/max/len:", int(cm.min()), int(cm.max()), len(cm))
-
-    print("ops n_chan_bin:", ops.get("n_chan_bin", None))
-    print("ops n_chan:", ops.get("n_chan", None))
-
-
+    # Convert to absolute coordinates
     st = np.asarray(st)
-
-    # Shift spike times from relative (online window) to absolute (full file) coordinates.
-    # extract() counts samples from batch 0 of bfile_rest, which starts at HOUR_SEC seconds.
-    # Adding HOUR_SEC * fs converts to the same absolute sample space as the GUI spike_times.npy.
     fs = float(ops["settings"]["fs"])
     sample_offset = np.int64(round(HOUR_SEC * fs))
     st_abs = st.copy()
     st_abs[:, 0] += sample_offset
-    logger.info(f"[ONLINE] Shifted spike times by +{sample_offset} samples ({HOUR_SEC}s * {fs}Hz) -> absolute coordinates.")
-    logger.info(f"[ONLINE] spike_times range: {int(st_abs[:,0].min())} - {int(st_abs[:,0].max())} samples")
-
-    # Save st.npy in absolute coordinates too (consistent with spike_times.npy)
-    np.save(out_dir / "st.npy", st_abs)
-    np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
-    save_ops(ops, results_dir=out_dir)
 
     spike_times = st_abs[:, 0].astype(np.int64, copy=False)
     spike_templates = st_abs[:, 1].astype(np.int64, copy=False)
 
-    # For phy-style tools: cluster = template for online (no merge/split step)
-    spike_clusters = spike_templates
+    # ======================================================
+    # FIX: MAP TEMPLATES TO FINAL GUI CLUSTERS
+    # ======================================================
+    # This ensures F1/Precision matches by accounting for GUI merges
+    mapping_path = offline_dir / "spike_clusters.npy"
+    template_idx_path = offline_dir / "spike_templates.npy"
 
+    if mapping_path.exists() and template_idx_path.exists():
+        logger.info("[ONLINE] Applying Template-to-Cluster mapping from offline results...")
+        off_templates = np.load(template_idx_path).reshape(-1)
+        off_clusters = np.load(mapping_path).reshape(-1)
+        
+        # Build map: Template ID -> Final Cluster ID
+        t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
+        spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
+    else:
+        logger.warning("[ONLINE] Cluster mapping not found; using cluster = template.")
+        spike_clusters = spike_templates
+
+    # ======================================================
+    # FIX: AUTOMATIC LABEL AND METADATA COPYING
+    # ======================================================
+    import shutil
+    for label_file in ["cluster_KSLabel.tsv", "cluster_group.tsv"]:
+        src = offline_dir / label_file
+        if src.exists():
+            shutil.copy(src, out_dir / label_file)
+            logger.info(f"[ONLINE] Copied {label_file} to online directory.")
+
+    # Save all results compatible with Phy/Comparison scripts
     np.save(out_dir / "spike_times.npy", spike_times)
     np.save(out_dir / "spike_templates.npy", spike_templates)
     np.save(out_dir / "spike_clusters.npy", spike_clusters)
+    np.save(out_dir / "st.npy", st_abs)
+    np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
+    
+    # Save templates and ops for complete environment reproduction
+    if (offline_dir / "templates.npy").exists():
+        shutil.copy(offline_dir / "templates.npy", out_dir / "templates.npy")
+    
+    save_ops(ops, results_dir=out_dir)
 
-    templates = np.load(offline_dir / "templates.npy")
-    np.save(out_dir / "templates.npy", templates)
-
-    logger.info("[ONLINE] Done.")
+    logger.info("[ONLINE] Online Phase Complete.")
     return
 
 
