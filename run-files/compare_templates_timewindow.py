@@ -388,7 +388,7 @@ def main():
     flow_m = flow_clu[i_flow]
 
     gui_labels, gui_label_file = load_labels(str(gui_phy))
-    flow_labels, flow_label_file = load_labels(str(flow_phy))
+    flow_labels, flow_label_file = load_labels(str(flow_online))
 
     gui_good_set = {cid for cid, lab in gui_labels.items() if lab == "good"}
     flow_good_set = {cid for cid, lab in flow_labels.items() if lab == "good"}
