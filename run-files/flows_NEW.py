@@ -298,6 +298,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "tmax": float(HOUR_SEC),
         "n_pcs": 3,
         "batch_size": 20000,
+        "nearest_chans": 8,
     }
 
     results_dir = Path(out_dir)
