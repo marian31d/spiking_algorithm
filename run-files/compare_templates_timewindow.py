@@ -31,7 +31,7 @@ Features:
 Run:
 python compare_templates_timewindow.py \
   --gui_phy  /path/to/gui/phy \
-  --flow_phy /path/to/flow/phy \
+  --flow_online /path/to/flow/phy \
   --tol 0 \
   --t_start 3000000 \
   --t_end   6000000 \
@@ -595,7 +595,7 @@ def main():
     summary_lines.append("GUI vs FLOW SUMMARY (ALL scores, ALL clusters + GOOD-only)")
     summary_lines.append("=" * 70)
     summary_lines.append(f"GUI phy:  {gui_phy}")
-    summary_lines.append(f"FLOW phy: {flow_phy}")
+    summary_lines.append(f"FLOW phy: {flow_online}")
     summary_lines.append(f"tol (samples): {args.tol}")
     summary_lines.append("")
     summary_lines.append(f"Matched spikes: {n_match}")
