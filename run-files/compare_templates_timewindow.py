@@ -31,7 +31,7 @@ Features:
 Run:
 python compare_templates_timewindow.py \
   --gui_phy  /path/to/gui/phy \
-  --flow_online /path/to/flow/phy \
+  --flow_phy /path/to/flow/phy \
   --tol 0 \
   --t_start 3000000 \
   --t_end   6000000 \
@@ -321,7 +321,7 @@ def save_heatmap(mat: np.ndarray, title: str, path: Path, cbar_label: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gui_phy", required=True, type=str, help="Path to GUI results")
-    ap.add_argument("--flow_online", required=True, type=str, help="Path to Online FLOW results")
+    ap.add_argument("--flow_phy", required=True, type=str, help="Path to Online FLOW results")
     ap.add_argument("--t_start", required=True, type=float, help="Start time of online phase in SECONDS")
     ap.add_argument("--t_duration", default=-1, type=float, help="Duration to compare in SECONDS (-1 for rest of file)")
     ap.add_argument("--tol", default=12, type=int, help="Spike jitter tolerance (samples)")
@@ -330,7 +330,7 @@ def main():
 
     fs = 20000 
     gui_phy = Path(args.gui_phy)
-    flow_online = Path(args.flow_online)
+    flow_phy = Path(args.flow_phy)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -339,8 +339,8 @@ def main():
     gui_times = np.load(gui_phy / "spike_times.npy").reshape(-1)
     gui_clu   = np.load(gui_phy / "spike_clusters.npy").reshape(-1)
     
-    flow_times = np.load(flow_online / "spike_times.npy").reshape(-1)
-    flow_clu   = np.load(flow_online / "spike_clusters.npy").reshape(-1)
+    flow_times = np.load(flow_phy / "spike_times.npy").reshape(-1)
+    flow_clu   = np.load(flow_phy / "spike_clusters.npy").reshape(-1)
 
     # 2. Strict Time Window Alignment
     # We define the window based on when your Online Phase actually started
@@ -366,7 +366,7 @@ def main():
 
     # Load Waveforms for Cosine Similarity
     gui_templates, gui_spike_templates = _load_templates_and_spike_templates(gui_phy)
-    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(flow_online)
+    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(flow_phy)
 
     # This variable is used later in your script; we must define it
     have_templates = (gui_templates is not None and flow_templates is not None)
@@ -388,7 +388,7 @@ def main():
     flow_m = flow_clu[i_flow]
 
     gui_labels, gui_label_file = load_labels(str(gui_phy))
-    flow_labels, flow_label_file = load_labels(str(flow_online))
+    flow_labels, flow_label_file = load_labels(str(flow_phy))
 
     gui_good_set = {cid for cid, lab in gui_labels.items() if lab == "good"}
     flow_good_set = {cid for cid, lab in flow_labels.items() if lab == "good"}
@@ -595,7 +595,7 @@ def main():
     summary_lines.append("GUI vs FLOW SUMMARY (ALL scores, ALL clusters + GOOD-only)")
     summary_lines.append("=" * 70)
     summary_lines.append(f"GUI phy:  {gui_phy}")
-    summary_lines.append(f"FLOW phy: {flow_online}")
+    summary_lines.append(f"FLOW phy: {flow_phy}")
     summary_lines.append(f"tol (samples): {args.tol}")
     summary_lines.append("")
     summary_lines.append(f"Matched spikes: {n_match}")
