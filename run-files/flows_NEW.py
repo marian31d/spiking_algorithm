@@ -297,7 +297,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
         "n_pcs": 3,
-        "batch_size": 10000,
+        "batch_size": 20000,
     }
 
     results_dir = Path(out_dir)
@@ -335,7 +335,7 @@ def online_flow(bin_path: Path, probe_path: Path,
         logger.info("[ONLINE] Wrot precision reduced to 4 decimal places.")
     
     # 2. Lower Nearest Channels (Reduce memory bandwidth)
-    ops['settings']['nearest_chans'] = 4
+    ops['settings']['nearest_chans'] = 8
     
     # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
     ops['settings']['max_iterations'] = 2 
