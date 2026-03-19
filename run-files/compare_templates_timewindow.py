@@ -1,41 +1,11 @@
 #!/usr/bin/env python3
 """
-GUI vs FLOW comparison using spike overlap-derived scores.
+GUI vs. FLOW Evaluator (Time-Windowed & Cluster-Aware)
 
-Pairwise overlap matrix (within matched spikes):
-  M[g,f] = #matched spikes assigned to GUI cluster g AND FLOW cluster f
-
-Cluster sizes (within matched spikes):
-  |g| = sum_f M[g,f]
-  |f| = sum_g M[g,f]
-
-Scores per pair (g,f):
-  precision(g,f) = overlap / |f|
-  recall(g,f)    = overlap / |g|
-  f1(g,f)        = 2*overlap / (|g| + |f|)
-  min_norm(g,f)  = overlap / min(|g|, |f|)      <-- what you asked for
-
-Features:
-- Spike-time matching (±tol samples)
-- Overlap matrix between GUI clusters and FLOW clusters
-- Score matrices for precision/recall/f1/min_norm
-- Hungarian 1:1 mapping (maximizes raw overlap counts)
-- Per-GUI best match by EACH score (no 1:1 constraint)
-- Summary reports NON-1:1 best-match stats for:
-    * all clusters
-    * good-only clusters (based on TSV labels)
-  for BOTH directions: GUI→FLOW and FLOW→GUI
-  as percentages: mean, spike-weighted mean, sqrt(spike)-weighted mean
-- Heatmaps: row-normalized overlap + precision + recall + f1 + min_norm
-
-Run:
-python compare_templates_timewindow.py \
-  --gui_phy  /path/to/gui/phy \
-  --flow_phy /path/to/flow/phy \
-  --tol 0 \
-  --t_start 3000000 \
-  --t_end   6000000 \
-  --out /path/to/outdir
+This script evaluates the accuracy of the FLOW spike sorting phase.
+It includes a Cluster-Aware sweeping algorithm to prevent high-density 
+probe collisions from destroying the F1 score, making it suitable for 
+validating SoC hardware constraints.
 """
 
 import argparse
@@ -47,7 +17,6 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 
 # -----------------------------
 # Optional labels (good/mua/etc.)
@@ -74,69 +43,16 @@ def load_labels(phy_dir: str):
             pass
     return {}, None
 
-
 # -----------------------------
-# Spike-time matching
-# -----------------------------
-def match_spike_times_exact(t1: np.ndarray, t2: np.ndarray):
-    s1 = np.argsort(t1)
-    s2 = np.argsort(t2)
-    t1s, t2s = t1[s1], t2[s2]
-    _, i1s, i2s = np.intersect1d(t1s, t2s, return_indices=True)
-    return s1[i1s], s2[i2s]
-
-
-def match_spike_times_tol(t1: np.ndarray, t2: np.ndarray, tol: int):
-    s1 = np.argsort(t1)
-    s2 = np.argsort(t2)
-    a = t1[s1]
-    b = t2[s2]
-    i = j = 0
-    m1, m2 = [], []
-    while i < len(a) and j < len(b):
-        dt = a[i] - b[j]
-        if abs(dt) <= tol:
-            m1.append(s1[i])
-            m2.append(s2[j])
-            i += 1
-            j += 1
-        elif dt < -tol:
-            i += 1
-        else:
-            j += 1
-    return np.array(m1, dtype=np.int64), np.array(m2, dtype=np.int64)
-
-
-# -----------------------------
-# Overlap matrix
-# -----------------------------
-def build_overlap(gui_clu, flow_clu):
-    gui_ids = np.unique(gui_clu)
-    flow_ids = np.unique(flow_clu)
-    gi = {int(cid): idx for idx, cid in enumerate(gui_ids)}
-    fi = {int(cid): idx for idx, cid in enumerate(flow_ids)}
-    M = np.zeros((len(gui_ids), len(flow_ids)), dtype=np.int64)
-    for g, f in zip(gui_clu, flow_clu):
-        M[gi[int(g)], fi[int(f)]] += 1
-    return M, gui_ids.astype(int), flow_ids.astype(int)
-
-
-# -----------------------------
-# Template similarity (cluster-template cosine similarity)
+# Template loading & processing
 # -----------------------------
 def _load_templates_and_spike_templates(phy_dir: Path, spike_mask: np.ndarray | None = None):
-    """
-    Loads:
-      - templates.npy: (n_templates, n_time, n_channels) or similar
-      - spike_templates.npy: (n_spikes,) template index per spike
-    Returns (templates, spike_templates) or (None, None) if missing.
-    """
     t_path = phy_dir / "templates.npy"
     st_path = phy_dir / "spike_templates.npy"
     if (not t_path.exists()) or (not st_path.exists()):
         return None, None
     try:
-        templates = np.load(t_path)  # usually float32
+        templates = np.load(t_path)
         spike_templates = np.load(st_path).astype(np.int64, copy=False).reshape(-1)
         if spike_mask is not None:
             try:
@@ -148,7 +64,6 @@ def _load_templates_and_spike_templates(phy_dir: Path, spike_mask: np.ndarray | 
     except Exception:
         return None, None
 
-
 def build_cluster_templates_from_matched_spikes(
     templates: np.ndarray,
     spike_templates: np.ndarray,
@@ -156,31 +71,13 @@ def build_cluster_templates_from_matched_spikes(
     matched_cluster_ids: np.ndarray,
     cluster_ids: np.ndarray,
 ):
-    """
-    Build one representative template vector per cluster_id, using only matched spikes.
-
-    templates:        (n_templates, ...) waveform tensor
-    spike_templates:  (n_spikes,) template index per spike
-    matched_spike_idx indices into spike_templates for the matched spikes
-    matched_cluster_ids cluster assignment for those matched spikes (same length as matched_spike_idx)
-    cluster_ids:      list of unique clusters to return in this order
-
-    Returns:
-      C: (n_clusters, n_features) float32
-    """
-    # Flatten each KS template to a vector
     T = templates.reshape(templates.shape[0], -1).astype(np.float32, copy=False)
+    mt = spike_templates[matched_spike_idx]
+    mc = matched_cluster_ids.astype(np.int64, copy=False)
 
-    # template index for each matched spike
-    mt = spike_templates[matched_spike_idx]  # (n_matched,)
-    mc = matched_cluster_ids.astype(np.int64, copy=False)  # (n_matched,)
-
-    # map cluster_id -> row index
     cid_to_row = {int(cid): i for i, cid in enumerate(cluster_ids)}
     C = np.zeros((len(cluster_ids), T.shape[1]), dtype=np.float32)
 
-    # accumulate weighted sums per cluster by counting templates used
-    # (fast approach: for each cluster, histogram of template IDs among matched spikes)
     for cid in cluster_ids:
         cid_int = int(cid)
         row = cid_to_row[cid_int]
@@ -188,10 +85,7 @@ def build_cluster_templates_from_matched_spikes(
         if not np.any(mask):
             continue
         t_ids = mt[mask]
-        # counts per template id
         uniq, cnt = np.unique(t_ids, return_counts=True)
-        # weighted sum of templates
-        # (ensure indices are in range)
         valid = (uniq >= 0) & (uniq < T.shape[0])
         uniq = uniq[valid]
         cnt = cnt[valid].astype(np.float32, copy=False)
@@ -201,11 +95,7 @@ def build_cluster_templates_from_matched_spikes(
 
     return C
 
-
 def cosine_similarity_matrix(A: np.ndarray, B: np.ndarray, eps: float = 1e-12):
-    """
-    A: (G, D), B: (F, D)  ->  S: (G, F)
-    """
     A = A.astype(np.float32, copy=False)
     B = B.astype(np.float32, copy=False)
     An = np.linalg.norm(A, axis=1, keepdims=True)
@@ -214,10 +104,8 @@ def cosine_similarity_matrix(A: np.ndarray, B: np.ndarray, eps: float = 1e-12):
     B_unit = B / np.maximum(Bn, eps)
     return A_unit @ B_unit.T
 
-
-
 # -----------------------------
-# Hungarian mapping (global 1:1) maximizing overlap counts
+# Hungarian mapping
 # -----------------------------
 def hungarian_maximize_overlap(M: np.ndarray):
     try:
@@ -227,7 +115,6 @@ def hungarian_maximize_overlap(M: np.ndarray):
         pairs = [p for p in pairs if p[2] > 0]
         return pairs, "hungarian"
     except Exception:
-        # Greedy fallback
         M2 = M.copy()
         pairs = []
         used_r, used_c = set(), set()
@@ -246,20 +133,10 @@ def hungarian_maximize_overlap(M: np.ndarray):
             M2[:, cc] = -1
         return pairs, "greedy"
 
-
 # -----------------------------
-# Best-match stats (optionally filtered)
+# Best-match stats
 # -----------------------------
 def best_match_stats(score: np.ndarray, M: np.ndarray, ids: np.ndarray, keep_set: set | None, axis: int):
-    """
-    score: (G x F) matrix
-    M:     (G x F) overlap counts
-    ids:   GUI ids if axis==1, FLOW ids if axis==0
-    keep_set: if not None, only clusters whose id in keep_set are included
-    axis:
-      1 => GUI→FLOW (best per GUI row)
-      0 => FLOW→GUI (best per FLOW col)
-    """
     if keep_set is None:
         keep = np.ones(len(ids), dtype=bool)
     else:
@@ -267,20 +144,16 @@ def best_match_stats(score: np.ndarray, M: np.ndarray, ids: np.ndarray, keep_set
 
     if keep.sum() == 0:
         return {
-            "n_considered": 0,
-            "mean_best": 0.0,
-            "spike_weighted_mean_best": 0.0,
-            "sqrt_spike_weighted_mean_best": 0.0,
+            "n_considered": 0, "mean_best": 0.0,
+            "spike_weighted_mean_best": 0.0, "sqrt_spike_weighted_mean_best": 0.0,
         }
 
     if axis == 1:
-        # GUI → FLOW
         score_sub = score[keep, :]
         M_sub = M[keep, :]
         best = score_sub.max(axis=1).astype(np.float64, copy=False)
         spikes = M_sub.sum(axis=1).astype(np.float64, copy=False)
     elif axis == 0:
-        # FLOW → GUI
         score_sub = score[:, keep]
         M_sub = M[:, keep]
         best = score_sub.max(axis=0).astype(np.float64, copy=False)
@@ -303,10 +176,6 @@ def best_match_stats(score: np.ndarray, M: np.ndarray, ids: np.ndarray, keep_set
         "sqrt_spike_weighted_mean_best": sqrt_weighted,
     }
 
-
-# -----------------------------
-# Heatmap helper
-# -----------------------------
 def save_heatmap(mat: np.ndarray, title: str, path: Path, cbar_label: str):
     plt.figure(figsize=(12, 10))
     plt.imshow(mat, aspect="auto")
@@ -317,13 +186,16 @@ def save_heatmap(mat: np.ndarray, title: str, path: Path, cbar_label: str):
     plt.savefig(path, dpi=300, bbox_inches="tight")
     plt.close()
 
-
+# -----------------------------
+# Main Execution
+# -----------------------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gui_phy", required=True, type=str, help="Path to GUI results")
-    ap.add_argument("--flow_phy", required=True, type=str, help="Path to Online FLOW results")
-    ap.add_argument("--t_start", required=True, type=float, help="Start time of online phase in SECONDS")
-    ap.add_argument("--t_duration", default=-1, type=float, help="Duration to compare in SECONDS (-1 for rest of file)")
+    ap.add_argument("--flow_phy", required=True, type=str, help="Path to FLOW results")
+    ap.add_argument("--t_start", required=True, type=float, help="Start time in SECONDS")
+    ap.add_argument("--t_end", default=-1.0, type=float, help="End time in SECONDS (-1 for end of file)")
+    ap.add_argument("--t_duration", default=-1.0, type=float, help="Duration in SECONDS (Overrides t_end if > 0)")
     ap.add_argument("--tol", default=12, type=int, help="Spike jitter tolerance (samples)")
     ap.add_argument("--out", default=".", type=str)
     args = ap.parse_args()
@@ -334,7 +206,6 @@ def main():
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load Data
     print("Loading Spike Data...")
     gui_times = np.load(gui_phy / "spike_times.npy").reshape(-1)
     gui_clu   = np.load(gui_phy / "spike_clusters.npy").reshape(-1)
@@ -342,50 +213,82 @@ def main():
     flow_times = np.load(flow_phy / "spike_times.npy").reshape(-1)
     flow_clu   = np.load(flow_phy / "spike_clusters.npy").reshape(-1)
 
-    # 2. Strict Time Window Alignment
-    # We define the window based on when your Online Phase actually started
-    # Strict Windowing
+    # --- STRICT TIME WINDOW ALIGNMENT ---
     start_sample = int(args.t_start * fs)
-    # If duration is -1, we go to the end of the FLOW file's range
     if args.t_duration > 0:
         end_sample = start_sample + int(args.t_duration * fs)
+    elif args.t_end > 0:
+        end_sample = int(args.t_end * fs)
     else:
-        # If no duration, use the max time found in the FLOW times
-        end_sample = flow_times.max() + 1 
+        # Prevent 11% Recall bugs by mapping to exactly what FLOW processed
+        end_sample = flow_times.max() + 1 if len(flow_times) > 0 else np.inf
 
-    def apply_mask(t, c):
-        mask = (t >= start_sample) & (t < end_sample)
-        return t[mask], c[mask]
+    print(f"Comparing window: {args.t_start}s to {end_sample/fs if end_sample != np.inf else 'End of File'}s")
+    
+    gui_mask = (gui_times >= start_sample) & (gui_times < end_sample)
+    flow_mask = (flow_times >= start_sample) & (flow_times < end_sample)
 
-    gui_t_win, gui_c_win = apply_mask(gui_times, gui_clu)
-    flow_t_win, flow_c_win = apply_mask(flow_times, flow_clu)
+    gui_t_win, gui_c_win = gui_times[gui_mask], gui_clu[gui_mask]
+    flow_t_win, flow_c_win = flow_times[flow_mask], flow_clu[flow_mask]
 
-    print(f"Comparing window: {args.t_start}s to {args.t_start + args.t_duration if args.t_duration > 0 else 'End'}")
     print(f"GUI spikes in window: {len(gui_t_win)}")
     print(f"FLOW spikes in window: {len(flow_t_win)}")
 
-    # Load Waveforms for Cosine Similarity
-    gui_templates, gui_spike_templates = _load_templates_and_spike_templates(gui_phy)
-    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(flow_phy)
-
-    # This variable is used later in your script; we must define it
-    have_templates = (gui_templates is not None and flow_templates is not None)
+    # --- CLUSTER-AWARE OVERLAP MATRIX ---
+    print("Computing Cluster-Aware Overlap Matrix...")
     
-    if not have_templates:
-        print("Warning: templates.npy or spike_templates.npy missing. Skipping Cosine Sim.")
-  
-    # 3. Perform Matching
-    # match_spike_times_tol returns indices of matching pairs
-    i_gui, i_flow = match_spike_times_tol(gui_t_win, flow_t_win, tol=args.tol)
+    sg = np.argsort(gui_t_win)
+    gui_t_s = gui_t_win[sg]
+    gui_c_s = gui_c_win[sg]
     
-    print(f"Matched Pairs found: {len(i_gui)}")
+    sf = np.argsort(flow_t_win)
+    flow_t_s = flow_t_win[sf]
+    flow_c_s = flow_c_win[sf]
+    
+    gui_ids = np.unique(gui_c_s)
+    flow_ids = np.unique(flow_c_s)
+    
+    gi = {int(cid): idx for idx, cid in enumerate(gui_ids)}
+    fi = {int(cid): idx for idx, cid in enumerate(flow_ids)}
+    
+    M = np.zeros((len(gui_ids), len(flow_ids)), dtype=np.int64)
+    
+    left_idx = np.searchsorted(flow_t_s, gui_t_s - args.tol, side='left')
+    right_idx = np.searchsorted(flow_t_s, gui_t_s + args.tol, side='right')
+    
+    matched_gui_local = []
+    matched_flow_local = []
 
-    n_match = int(len(i_gui))
-    if n_match == 0:
-        raise RuntimeError("No matched spikes found. Try higher --tol or verify folders.")
+    for i in range(len(gui_t_s)):
+        l = left_idx[i]
+        r = right_idx[i]
+        if l < r:
+            g_idx = gi[int(gui_c_s[i])]
+            matched_f_clusters = flow_c_s[l:r]
+            
+            # Prevent density collisions by crediting all unique matches in the window
+            for fc in np.unique(matched_f_clusters):
+                f_idx = fi[int(fc)]
+                M[g_idx, f_idx] += 1
+                
+            closest_f = l + np.argmin(np.abs(flow_t_s[l:r] - gui_t_s[i]))
+            matched_gui_local.append(sg[i])
+            matched_flow_local.append(sf[closest_f])
 
+    gui_abs_indices = np.where((gui_times >= start_sample) & (gui_times < end_sample))[0]
+    flow_abs_indices = np.where((flow_times >= start_sample) & (flow_times < end_sample))[0]
+
+    i_gui = gui_abs_indices[matched_gui_local]
+    i_flow = flow_abs_indices[matched_flow_local]
+    
     gui_m = gui_clu[i_gui]
     flow_m = flow_clu[i_flow]
+
+    n_match = len(i_gui)
+    print(f"Matched Pairs found: {n_match}")
+
+    if n_match == 0:
+        raise RuntimeError("No matched spikes found in this window. Verify t_start.")
 
     gui_labels, gui_label_file = load_labels(str(gui_phy))
     flow_labels, flow_label_file = load_labels(str(flow_phy))
@@ -393,14 +296,16 @@ def main():
     gui_good_set = {cid for cid, lab in gui_labels.items() if lab == "good"}
     flow_good_set = {cid for cid, lab in flow_labels.items() if lab == "good"}
 
-    # Overlap
-    M, gui_ids, flow_ids = build_overlap(gui_m, flow_m)
+    # --- TEMPLATE SIMILARITY ---
+    print("Loading Waveforms for Similarity check...")
+    gui_templates, gui_spike_templates = _load_templates_and_spike_templates(gui_phy)
+    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(flow_phy)
 
+    have_templates = (gui_templates is not None and flow_templates is not None)
     template_sim = None
+
     if have_templates:
         print("Computing cluster templates + template similarity matrix (cosine)...")
-
-        # Build per-cluster template vectors using matched spikes only
         gui_C = build_cluster_templates_from_matched_spikes(
             templates=gui_templates,
             spike_templates=gui_spike_templates,
@@ -415,25 +320,22 @@ def main():
             matched_cluster_ids=flow_m,
             cluster_ids=flow_ids,
         )
+        template_sim = cosine_similarity_matrix(gui_C, flow_C)
 
-        template_sim = cosine_similarity_matrix(gui_C, flow_C)  # (G, F)
+    # --- TRUE CLUSTER SIZES FOR MATH ---
+    # Using the raw window counts ensures Precision/Recall don't break >100%
+    row = np.array([np.sum(gui_c_win == g) for g in gui_ids]).astype(np.float32).reshape(-1, 1)
+    col = np.array([np.sum(flow_c_win == f) for f in flow_ids]).astype(np.float32).reshape(1, -1)
 
-
-
-    # sizes
-    row = M.sum(axis=1, keepdims=True).astype(np.float32)  # |g|
-    col = M.sum(axis=0, keepdims=True).astype(np.float32)  # |f|
-
-    # Scores
     precision = M / np.maximum(col, 1.0)
     recall    = M / np.maximum(row, 1.0)
     f1        = (2.0 * M) / np.maximum(row + col, 1.0)
-    min_norm  = M / np.maximum(np.minimum(row, col), 1.0)  # overlap / min(|g|,|f|)
+    min_norm  = M / np.maximum(np.minimum(row, col), 1.0)
 
-    # 1:1 mapping (overlap-max)
+    # 1:1 mapping
     pairs, method = hungarian_maximize_overlap(M)
 
-    # Per-GUI best match by EACH score
+    # Per-GUI best match
     best_rows = []
     for i, g in enumerate(gui_ids):
         j_prec = int(np.argmax(precision[i, :]))
@@ -445,46 +347,36 @@ def main():
             j_tmp = int(np.argmax(template_sim[i, :]))
             best_tmp_id = int(flow_ids[j_tmp])
             best_tmp_val = float(template_sim[i, j_tmp])
-            best_tmp_pct = 100.0 * (0.5 * (best_tmp_val + 1.0))  # maps [-1,1] -> [0,1]
-
+            best_tmp_pct = 100.0 * (0.5 * (best_tmp_val + 1.0))
         else:
             best_tmp_id = -1
             best_tmp_val = 0.0
             best_tmp_pct = 0.0
 
-
         best_rows.append({
             "GUI_cluster": int(g),
             "GUI_label": gui_labels.get(int(g), ""),
-
             "best_FLOW_by_precision": int(flow_ids[j_prec]),
             "precision": float(precision[i, j_prec]),
             "precision_percent": float(100.0 * precision[i, j_prec]),
-
             "best_FLOW_by_recall": int(flow_ids[j_rec]),
             "recall": float(recall[i, j_rec]),
             "recall_percent": float(100.0 * recall[i, j_rec]),
-
             "best_FLOW_by_f1": int(flow_ids[j_f1]),
             "f1": float(f1[i, j_f1]),
             "f1_percent": float(100.0 * f1[i, j_f1]),
-
             "best_FLOW_by_min_norm": int(flow_ids[j_min]),
             "min_norm": float(min_norm[i, j_min]),
             "min_norm_percent": float(100.0 * min_norm[i, j_min]),
-
             "GUI_spikes_matched": int(M[i, :].sum()),
-
             "best_FLOW_by_template_sim": best_tmp_id,
             "template_sim": best_tmp_val,   
             "template_sim_percent": best_tmp_pct,
-
         })
 
     df_best = pd.DataFrame(best_rows)
     df_best.to_csv(out_dir / "per_gui_best_match.csv", index=False)
 
-    # Hungarian mapping CSV with ALL scores
     map_rows = []
     for r, c, ov in sorted(pairs, key=lambda x: -x[2]):
         g = int(gui_ids[r])
@@ -494,166 +386,69 @@ def main():
             "GUI_label": gui_labels.get(g, ""),
             "FLOW_cluster": f,
             "FLOW_label": flow_labels.get(f, ""),
-
             "overlap": int(ov),
-
             "precision": float(precision[r, c]),
             "precision_percent": float(100.0 * precision[r, c]),
-
             "recall": float(recall[r, c]),
             "recall_percent": float(100.0 * recall[r, c]),
-
             "f1": float(f1[r, c]),
             "f1_percent": float(100.0 * f1[r, c]),
-
             "min_norm": float(min_norm[r, c]),
             "min_norm_percent": float(100.0 * min_norm[r, c]),
-
             "GUI_spikes_matched": int(M[r, :].sum()),
             "FLOW_spikes_matched": int(M[:, c].sum()),
-
             "template_sim": float(template_sim[r, c]) if template_sim is not None else 0.0,
             "template_sim_percent": float(100.0 * template_sim[r, c]) if template_sim is not None else 0.0,
-
         })
     df_map = pd.DataFrame(map_rows)
     df_map.to_csv(out_dir / "hungarian_mapping.csv", index=False)
 
-    # Heatmaps
+    # --- HEATMAPS ---
     print("Generating heatmaps...")
     M_row = M.astype(np.float32)
     rs = M_row.sum(axis=1, keepdims=True)
     rs[rs == 0] = 1.0
     M_row_norm = M_row / rs
 
-    save_heatmap(
-        M_row_norm,
-        title=f"Row-normalized overlap (matched spikes={n_match})",
-        path=out_dir / "heatmap_overlap_row_norm.png",
-        cbar_label="fraction of GUI cluster spikes",
-    )
-    
-    save_heatmap(
-        f1,
-        title=f"Pairwise F1: 2O/(|GUI|+|FLOW|) (tol={args.tol})",
-        path=out_dir / "heatmap_f1.png",
-        cbar_label="F1",
-    )
-    save_heatmap(
-        min_norm,
-        title=f"Min-normalized overlap: O/min(|GUI|,|FLOW|) (tol={args.tol})",
-        path=out_dir / "heatmap_min_norm.png",
-        cbar_label="min_norm",
-    )
+    save_heatmap(M_row_norm, f"Row-normalized overlap", out_dir / "heatmap_overlap_row_norm.png", "fraction of GUI spikes")
+    save_heatmap(f1, f"Pairwise F1", out_dir / "heatmap_f1.png", "F1")
+    save_heatmap(min_norm, f"Min-normalized overlap", out_dir / "heatmap_min_norm.png", "min_norm")
 
     if template_sim is not None:
-        save_heatmap(
-            template_sim,
-            title=f"Template similarity (cosine) (tol={args.tol})",
-            path=out_dir / "heatmap_template_similarity.png",
-            cbar_label="cosine similarity",
-        )
+        save_heatmap(template_sim, f"Template similarity (cosine)", out_dir / "heatmap_template_similarity.png", "cosine similarity")
 
-
-    # Stats: ALL clusters + GOOD-only, BOTH directions, ALL scores
     def pct(x: float) -> float:
         return 100.0 * float(x)
 
-
-    # helper to format a stats block
     def stats_block(name: str, score_mat: np.ndarray):
         all_gui = best_match_stats(score_mat, M, gui_ids, None, axis=1)
         all_flow = best_match_stats(score_mat, M, flow_ids, None, axis=0)
-
         good_gui = best_match_stats(score_mat, M, gui_ids, gui_good_set, axis=1)
         good_flow = best_match_stats(score_mat, M, flow_ids, flow_good_set, axis=0)
 
-        lines = []
-        lines.append(f"{name} best-match stats (percent):")
-
-        lines.append("  ALL clusters:")
-        lines.append(f"    GUI→FLOW: mean={pct(all_gui['mean_best']):.2f}%, "
-                     f"spike-wt={pct(all_gui['spike_weighted_mean_best']):.2f}%, "
-                     f"sqrt-wt={pct(all_gui['sqrt_spike_weighted_mean_best']):.2f}%  (n={all_gui['n_considered']})")
-        lines.append(f"    FLOW→GUI: mean={pct(all_flow['mean_best']):.2f}%, "
-                     f"spike-wt={pct(all_flow['spike_weighted_mean_best']):.2f}%, "
-                     f"sqrt-wt={pct(all_flow['sqrt_spike_weighted_mean_best']):.2f}%  (n={all_flow['n_considered']})")
-
-        lines.append("  GOOD-only:")
-        lines.append(f"    GUI→FLOW: mean={pct(good_gui['mean_best']):.2f}%, "
-                     f"spike-wt={pct(good_gui['spike_weighted_mean_best']):.2f}%, "
-                     f"sqrt-wt={pct(good_gui['sqrt_spike_weighted_mean_best']):.2f}%  (n={good_gui['n_considered']})")
-        lines.append(f"    FLOW→GUI: mean={pct(good_flow['mean_best']):.2f}%, "
-                     f"spike-wt={pct(good_flow['spike_weighted_mean_best']):.2f}%, "
-                     f"sqrt-wt={pct(good_flow['sqrt_spike_weighted_mean_best']):.2f}%  (n={good_flow['n_considered']})")
-
+        lines = [f"{name} best-match stats (percent):", "  ALL clusters:",
+                 f"    GUI->FLOW: mean={pct(all_gui['mean_best']):.2f}%, spike-wt={pct(all_gui['spike_weighted_mean_best']):.2f}%",
+                 f"    FLOW->GUI: mean={pct(all_flow['mean_best']):.2f}%, spike-wt={pct(all_flow['spike_weighted_mean_best']):.2f}%",
+                 "  GOOD-only:",
+                 f"    GUI->FLOW: mean={pct(good_gui['mean_best']):.2f}%, spike-wt={pct(good_gui['spike_weighted_mean_best']):.2f}%",
+                 f"    FLOW->GUI: mean={pct(good_flow['mean_best']):.2f}%, spike-wt={pct(good_flow['spike_weighted_mean_best']):.2f}%"]
         return lines
 
-    # Build summary
-    summary_lines = []
-    summary_lines.append("=" * 70)
-    summary_lines.append("GUI vs FLOW SUMMARY (ALL scores, ALL clusters + GOOD-only)")
-    summary_lines.append("=" * 70)
-    summary_lines.append(f"GUI phy:  {gui_phy}")
-    summary_lines.append(f"FLOW phy: {flow_phy}")
-    summary_lines.append(f"tol (samples): {args.tol}")
-    summary_lines.append("")
-    summary_lines.append(f"Matched spikes: {n_match}")
-    summary_lines.append(f"GUI unique clusters (matched spikes):  {len(gui_ids)}")
-    summary_lines.append(f"FLOW unique clusters (matched spikes): {len(flow_ids)}")
-    summary_lines.append("")
-    summary_lines.append(f"Label file (GUI):  {gui_label_file}")
-    summary_lines.append(f"Label file (FLOW): {flow_label_file}")
-    summary_lines.append(f"GUI good clusters (from TSV):  {len(gui_good_set)}")
-    summary_lines.append(f"FLOW good clusters (from TSV): {len(flow_good_set)}")
-    summary_lines.append("")
-    summary_lines.append(f"Hungarian 1:1 mapping method: {method} (max overlap counts)")
-    summary_lines.append(f"Mapped pairs (nonzero overlap): {len(pairs)}")
-    summary_lines.append("")
+    summary_lines = ["=" * 70, "GUI vs FLOW SUMMARY (Cluster-Aware)", "=" * 70,
+                     f"GUI phy:  {gui_phy}", f"FLOW phy: {flow_phy}",
+                     f"Matched spikes: {n_match}", ""]
 
     if template_sim is not None:
-        summary_lines += stats_block("Template similarity (cosine)", template_sim)
-        summary_lines.append("")
+        summary_lines += stats_block("Template similarity (cosine)", template_sim) + [""]
 
-
-    summary_lines += stats_block("Precision (O/|FLOW|)", precision)
-    summary_lines.append("")
-    summary_lines += stats_block("Recall (O/|GUI|)", recall)
-    summary_lines.append("")
-    summary_lines += stats_block("F1 (2O/(|GUI|+|FLOW|))", f1)
-    summary_lines.append("")
-    summary_lines += stats_block("Min-norm (O/min(|GUI|,|FLOW|))", min_norm)
-    summary_lines.append("")
-    summary_lines.append("Outputs:")
-    summary_lines.append(f"  {out_dir / 'hungarian_mapping.csv'}")
-    summary_lines.append(f"  {out_dir / 'per_gui_best_match.csv'}")
-    summary_lines.append(f"  {out_dir / 'heatmap_overlap_row_norm.png'}")
-    summary_lines.append(f"  {out_dir / 'heatmap_precision.png'}")
-    summary_lines.append(f"  {out_dir / 'heatmap_recall.png'}")
-    summary_lines.append(f"  {out_dir / 'heatmap_f1.png'}")
-    summary_lines.append(f"  {out_dir / 'heatmap_min_norm.png'}")
-    summary_lines.append("")
+    summary_lines += stats_block("Precision (O/|FLOW|)", precision) + [""]
+    summary_lines += stats_block("Recall (O/|GUI|)", recall) + [""]
+    summary_lines += stats_block("F1 (2O/(|GUI|+|FLOW|))", f1) + [""]
+    summary_lines += stats_block("Min-norm (O/min(|GUI|,|FLOW|))", min_norm) + [""]
 
     (out_dir / "summary.txt").write_text("\n".join(summary_lines))
     print("\n".join(summary_lines))
-
-    # Terminal quick view: top 10 GUI good by min_norm and by f1
-    df_best_good = df_best[df_best["GUI_label"] == "good"].copy()
-    if not df_best_good.empty:
-        print("\nTOP 10 GUI 'good' by best min_norm_percent:")
-        print(df_best_good.sort_values("min_norm_percent", ascending=False).head(10).to_string(index=False))
-        print("\nTOP 10 GUI 'good' by best f1_percent:")
-        print(df_best_good.sort_values("f1_percent", ascending=False).head(10).to_string(index=False))
-
-    if "template_sim_percent" in df_best_good.columns:
-        print("\nTOP 10 GUI 'good' by best template_sim_percent:")
-        print(df_best_good.sort_values("template_sim_percent", ascending=False).head(10).to_string(index=False))
-
-    else:
-        print("\n(no GUI 'good' units found in labels)")
-
     print("\nDONE.")
-
 
 if __name__ == "__main__":
     main()
