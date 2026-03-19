@@ -330,7 +330,7 @@ def main():
 
     fs = 20000 
     gui_phy = Path(args.gui_phy)
-    online_phy = Path(args.flow_online)
+    flow_online = Path(args.flow_online)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -339,8 +339,8 @@ def main():
     gui_times = np.load(gui_phy / "spike_times.npy").reshape(-1)
     gui_clu   = np.load(gui_phy / "spike_clusters.npy").reshape(-1)
     
-    flow_times = np.load(online_phy / "spike_times.npy").reshape(-1)
-    flow_clu   = np.load(online_phy / "spike_clusters.npy").reshape(-1)
+    flow_times = np.load(flow_online / "spike_times.npy").reshape(-1)
+    flow_clu   = np.load(flow_online / "spike_clusters.npy").reshape(-1)
 
     # 2. Strict Time Window Alignment
     # We define the window based on when your Online Phase actually started
@@ -366,7 +366,7 @@ def main():
 
     # Load Waveforms for Cosine Similarity
     gui_templates, gui_spike_templates = _load_templates_and_spike_templates(gui_phy)
-    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(online_phy)
+    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(flow_online)
 
     # This variable is used later in your script; we must define it
     have_templates = (gui_templates is not None and flow_templates is not None)
