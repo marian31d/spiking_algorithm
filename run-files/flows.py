@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-
+#This version of flows is deteministic and uses the exact same functions the gui uses to run
 # =========================
 # DETERMINISM / REPRODUCIBILITY (must be before torch import)
 # =========================
 import os
+os.environ["TORCH_SHOW_CPP_STACKTRACES"] = "1"
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 os.environ["PYTHONHASHSEED"] = "0"
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -36,18 +37,10 @@ from pathlib import Path
 import json
 
 from kilosort.io import load_probe, BinaryFiltered, save_ops, load_ops
-from kilosort.run_kilosort import (
-    initialize_ops,
-    compute_preprocessing,
-    compute_drift_correction,
-    detect_spikes,
-    cluster_spikes,
-)
-from kilosort import preprocessing
+from kilosort.run_kilosort import _sort
 from kilosort.parameters import DEFAULT_SETTINGS
 from kilosort.gui.logger import setup_logger
 from kilosort import template_matching
-from kilosort.io import save_to_phy
 
 """
 Two-stage Kilosort4 flow:
@@ -60,56 +53,32 @@ Two-stage Kilosort4 flow:
 This version:
 - DOES NOT filter Wall
 - Writes offline statistics (good/mua counts, total clusters, etc.)
-- Exports Phy on CPU in ONLINE to avoid CUDA OOM inside save_to_phy()
-- Uses correct Wall layout for extract vs save_to_phy:
-    * extract() uses (K, PCs, Chan)
-    * save_to_phy() expects (K, Chan, PCs)
 """
 
 logger = setup_logger(__name__)
-
-
 
 def ensure_dir(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
 
-
-def export_for_online(ops: dict, Wall: torch.Tensor, out_dir: Path):
-    out_dir = ensure_dir(out_dir)
-    save_ops(ops, results_dir=out_dir)
-    np.save(out_dir / "Wall.npy", Wall.detach().cpu().numpy())
-    logger.info(f"[EXPORT] Saved ops.npy + Wall.npy to: {out_dir}")
-
-def remap_clusters_to_contiguous(spike_clusters: np.ndarray):
-    """Map arbitrary cluster IDs to 0..(K-1) contiguous IDs."""
-    spike_clusters = spike_clusters.astype(np.int64, copy=False)
-    uniq = np.unique(spike_clusters)
-    mapping = {cid: i for i, cid in enumerate(uniq)}
-    remapped = np.vectorize(mapping.get)(spike_clusters).astype(np.int32)
-    return remapped, uniq
-
-def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np.ndarray):
+def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, HOUR_SEC: float):
     """
     Writes offline statistics into:
-      - out_dir/offline_stats.txt
-      - out_dir/offline_stats.json
+      - results_dir/offline_stats.txt
+      - results_dir/offline_stats.json
 
     Uses (if present):
       - cluster_KSLabel.tsv or cluster_group.tsv
       - spike_clusters.npy
       - spike_templates.npy
     """
-    phy_dir = Path(phy_dir)
-    out_dir = Path(out_dir)
-
     # -------- read labels (cluster_id -> label) --------
     labels = {}
     labels_file_used = None
     candidates = [("cluster_KSLabel.tsv", "KSLabel"), ("cluster_group.tsv", "group")]
 
     for fname, labcol in candidates:
-        f = phy_dir / fname
+        f = results_dir / fname
         if not f.exists():
             continue
         lines = f.read_text().strip().splitlines()
@@ -150,8 +119,8 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
         mua_cluster_ids = sorted(set(mua_cluster_ids))
 
     # -------- spike/template arrays (optional) --------
-    spike_clusters_path = phy_dir / "spike_clusters.npy"
-    spike_templates_path = phy_dir / "spike_templates.npy"
+    spike_clusters_path = results_dir / "spike_clusters.npy"
+    spike_templates_path = results_dir / "spike_templates.npy"
 
     spike_clusters = None
     spike_templates = None
@@ -187,7 +156,8 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
         label_spike_counts = {str(k): int(v) for k, v in zip(u, cts)}
 
     summary = {
-        "phy_dir": str(phy_dir),
+        "results_dir": str(results_dir),
+        "HOUR_SEC": HOUR_SEC,
         "labels_file_used": labels_file_used,
         "Wall_num_templates_K": K,
         "offline_num_spikes_st": n_spikes,
@@ -203,11 +173,11 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
         "note": "Wall is NOT filtered. These stats are for reporting only.",
     }
 
-    (out_dir / "offline_stats.json").write_text(json.dumps(summary, indent=2))
+    (results_dir / "offline_stats.json").write_text(json.dumps(summary, indent=2))
 
     lines = []
     lines.append("OFFLINE FLOW STATISTICS")
-    lines.append(f"phy_dir: {phy_dir}")
+    lines.append(f"results_dir: {results_dir}")
     lines.append(f"labels_file_used: {labels_file_used}")
     lines.append("")
     lines.append(f"Wall templates (K): {K}")
@@ -237,37 +207,47 @@ def write_offline_stats(phy_dir: Path, out_dir: Path, Wall: torch.Tensor, st: np
             lines.append(f"  {k}: {v}")
 
     lines.append("")
-    lines.append(f"Wrote: {out_dir / 'offline_stats.txt'}")
-    lines.append(f"Wrote: {out_dir / 'offline_stats.json'}")
-    (out_dir / "offline_stats.txt").write_text("\n".join(lines))
+    lines.append(f"Wrote: {results_dir / 'offline_stats.txt'}")
+    lines.append(f"Wrote: {results_dir / 'offline_stats.json'}")
+    (results_dir / "offline_stats.txt").write_text("\n".join(lines))
 
-    logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {out_dir}")
+    logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
-
-def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
+def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshift=False):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
     fs = float(s["fs"])
-    NT = int(ops.get("NT", s.get("batch_size", 60000)))
+    NT = int(s["batch_size"])
     nt = int(ops.get("nt", 61))
     nt0min = int(ops.get("nt0min", 20))
 
-    hp_filter = preprocessing.get_highpass_filter(
-        fs=fs,
-        cutoff=float(s.get("highpass_cutoff", 300.0)),
-        device=device,
-    )
+    hp_filter = ops["fwav"]
 
     Wrot = ops.get("Wrot", None)
-    if Wrot is None:
-        raise ValueError("ops['Wrot'] missing.")
 
+    # Extract dshift from ops, converting to numpy if needed
     dshift = ops.get("dshift", None)
     if dshift is not None:
         if isinstance(dshift, torch.Tensor):
             dshift = dshift.detach().cpu().numpy()
         else:
             dshift = np.asarray(dshift)
+
+    if zero_dshift:
+        # Online/SoC phase: zero out drift correction.
+        # Pass explicit zeros (not None) so BinaryFiltered applies zero shift
+        # per batch without recomputing drift from scratch.
+        if dshift is not None:
+            dshift = np.zeros_like(dshift)
+        else:
+            # ops had no dshift — compute n_batches from file size (tmax may be np.inf)
+            n_chan_bin = int(ops["settings"]["n_chan_bin"])
+            bytes_per_sample = 2  # int16
+            total_samples = os.path.getsize(str(bin_path)) // (n_chan_bin * bytes_per_sample)
+            online_start_sample = int(round(float(ops["settings"]["tmin"]) * float(ops["settings"]["fs"])))
+            n_batches_online = int(np.ceil((total_samples - online_start_sample) / float(ops["settings"]["batch_size"])))
+            dshift = np.zeros(n_batches_online, dtype=np.float32)
+        logger.info(f"[ONLINE] dshift zeroed ({len(dshift)} batches) — no drift correction applied.")
 
     bfile = BinaryFiltered(
         filename=str(bin_path),
@@ -277,18 +257,19 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
         nt=nt,
         nt0min=nt0min,
         chan_map=probe["chanMap"],
-        hp_filter=hp_filter,
-        whiten_mat=Wrot,
+        hp_filter=hp_filter,          # from ops
+        whiten_mat=Wrot,              # from ops
         dshift=dshift,
-        device=device,
-        do_CAR=bool(s.get("do_CAR", True)),
+        device=DEVICE,
+        do_CAR=DO_CAR,
         artifact_threshold=float(s.get("artifact_threshold", np.inf)),
-        invert_sign=bool(s.get("invert_sign", False)),
-        dtype=str(s.get("data_dtype", "int16")),
+        invert_sign=INVERT_SIGN,
+        dtype=DATA_DTYPE,
         tmin=float(tmin),
         tmax=float(tmax),
     )
 
+    # pad dshift to n_batches if needed (keeps shapes aligned) — offline only
     if bfile.dshift is not None:
         nb = int(bfile.n_batches)
         ds = np.asarray(bfile.dshift).reshape(-1)
@@ -300,190 +281,171 @@ def build_bfile_from_ops(bin_path, probe, ops, device, tmin=0.0, tmax=np.inf):
 
 
 def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
-                 fs: float, nchan: int, dtype: str, HOUR_SEC: float):
+                 fs: float, nchan: int, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
+#-----------------------------------------------------------------------------------
+    cm = np.asarray(probe["chanMap"])
+    assert cm.ndim == 1
+    assert int(cm.min()) >= 0, f"chanMap min {cm.min()} < 0"
+    assert int(cm.max()) < int(nchan), f"chanMap max {cm.max()} >= nchan {nchan}"
+#-----------------------------------------------------------------------------------
 
     user_settings = {
         "fs": float(fs),
         "n_chan_bin": int(nchan),
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
-        "n_pcs": 6,
-        "nearest_chans": 10,
-        "position_limit": 100.0,
-        "nt": 61,
-        "nt0min": 20,
+        "n_pcs": 3,
         "batch_size": 60000,
-        "highpass_cutoff": 300.0,
+        "nearest_chans": 8,
     }
 
+    results_dir = Path(out_dir)
+
     settings = {**DEFAULT_SETTINGS, **user_settings}
-    settings["filename"] = str(bin_path)
-    settings["data_dir"] = str(bin_path.parent)
-    settings["results_dir"] = str(out_dir)
+    settings["filename"] = [Path(bin_path)]
+    settings["data_dir"] = settings["filename"][0].parent
+    settings["results_dir"] = results_dir
 
-    ops, settings = initialize_ops(settings, probe, dtype, True, False, device, False, False)
-    ops["settings"] = settings
-    ops["filename"] = settings["filename"]
-    ops["data_dir"] = settings["data_dir"]
+    ops, st, clu, tF, Wall, _, _, _, _ =_sort(settings["filename"],
+                   results_dir, probe, settings, DATA_DTYPE, DEVICE, DO_CAR, CLEAR_CACHE, INVERT_SIGN,
+                   SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, file_object=None, progress_bar=None, gui_sorter=None)
 
-    ops = compute_preprocessing(ops, device=device)
-    ops, bfile, st0 = compute_drift_correction(ops, device=device)
-    st, tF, Wall0, clu0 = detect_spikes(ops, device=device, bfile=bfile)
-
-    clu, Wall, st, tF = cluster_spikes(st, tF, ops, device, bfile)
-
-    phy_dir = out_dir / "phy_offline"
-    phy_dir.mkdir(parents=True, exist_ok=True)
-
-    spike_clusters = st[:, 1].astype(np.int32)
-    imin = bfile.imin
-
-    # BEFORE save_to_phy in offline_flow
-    spike_clusters_raw = st[:, 1].astype(np.int64, copy=False)
-    spike_clusters, cluster_ids = remap_clusters_to_contiguous(spike_clusters_raw)
-
-    st = st.copy()
-    st[:, 1] = spike_clusters
-
-    ret = save_to_phy(
-        st=st,
-        clu=spike_clusters,
-        tF=tF,
-        Wall=Wall,
-        probe=probe,
-        ops=ops,
-        imin=imin,
-        results_dir=phy_dir,
-        data_dtype=ops["settings"].get("data_dtype", "int16"),
-        save_extra_vars=False,
-    )
-    phy_used = Path(ret[0]) if isinstance(ret, (list, tuple)) else phy_dir
-
-    write_offline_stats(phy_used, out_dir, Wall, st)
-
-    export_for_online(ops, Wall, out_dir)
-    logger.info("[OFFLINE] Done.")
-    return ops, Wall
-
+    write_offline_stats(results_dir, Wall, st, HOUR_SEC)
+    logger.info("Offline stats written")
+    return
 
 def online_flow(bin_path: Path, probe_path: Path,
-                exported_offline_dir: Path, out_dir: Path, HOUR_SEC: float):
+                offline_dir: Path, out_dir: Path, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probe = load_probe(probe_path)
 
-    ops = load_ops(exported_offline_dir / "ops.npy", device=device)
-    Wall_np = np.load(exported_offline_dir / "Wall.npy")
-    Wall = torch.from_numpy(Wall_np).to(device)
+    # Load resources from offline/GUI run
+    ops = load_ops(offline_dir / "ops.npy", device=DEVICE)
+    Wall_np = np.load(offline_dir / "Wall.npy")
+    Wall = torch.from_numpy(Wall_np).to(DEVICE)
 
-    ops["settings"]["tmin"] = float(HOUR_SEC)
-    ops["settings"]["tmax"] = float(np.inf)
+    # ======================================================
+    # SIMULATE SoC HARDWARE CONSTRAINTS
+    # ======================================================
+    # 1. Lower Wrot Precision (4 digits after decimal point)
+    if 'Wrot' in ops:
+        precision = 10000
+        ops['Wrot'] = torch.round(ops['Wrot'] * precision) / precision
+        logger.info("[ONLINE] Wrot precision reduced to 4 decimal places.")
+    
+    # 2. Lower Nearest Channels (Reduce memory bandwidth)
+    ops['settings']['nearest_chans'] = 8
+    
+    # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
+    ops['settings']['max_iterations'] = 2 
+    
+    # 4. Simulate SoC low-latency streaming (e.g., 2000 samples = 100ms latency)
+    ops['settings']['batch_size'] = 2000
 
-    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, device, float(HOUR_SEC), float(np.inf))
+    # Set window for the 'rest' of the data
+    ops['settings']['tmin'] = float(HOUR_SEC)
+    ops['settings']['tmax'] = float(np.inf)
+
+    # Build binary file object with zero drift correction
+    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
+                                      zero_dshift=True)
 
     n_pcs = int(ops["settings"]["n_pcs"])
-
-    # Keep Wall in (K, Chan, PCs) for Phy export later
-    Wall_phy = Wall
-
-    # Create a separate version for extract (K, PCs, Chan) if needed
-    Wall_match = Wall
-    if Wall_match.ndim == 3 and Wall_match.shape[-1] == n_pcs:
-        Wall_match = Wall_match.permute(0, 2, 1).contiguous()
+    if Wall.shape[1] == n_pcs:
+        Wall_match = Wall
+    elif Wall.shape[2] == n_pcs:
+        Wall_match = Wall.permute(0, 2, 1).contiguous()
+    else:
+        raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
-    st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=device)
+    
+    # Core SoC simulation: Template Matching
+    st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
 
-    imin = bfile_rest.imin
+    # Convert to absolute coordinates
+    st = np.asarray(st)
+    fs = float(ops["settings"]["fs"])
+    sample_offset = np.int64(round(HOUR_SEC * fs))
+    st_abs = st.copy()
+    st_abs[:, 0] += sample_offset
 
-    phy_dir = out_dir / "phy"
-    phy_dir.mkdir(parents=True, exist_ok=True)
+    spike_times = st_abs[:, 0].astype(np.int64, copy=False)
+    spike_templates = st_abs[:, 1].astype(np.int64, copy=False)
 
-    spike_clusters_raw = st[:, 1].astype(np.int64, copy=False)
-    spike_clusters, cluster_ids = remap_clusters_to_contiguous(spike_clusters_raw)
+    # ======================================================
+    # FIX: MAP TEMPLATES TO FINAL GUI CLUSTERS
+    # ======================================================
+    # This ensures F1/Precision matches by accounting for GUI merges
+    mapping_path = offline_dir / "spike_clusters.npy"
+    template_idx_path = offline_dir / "spike_templates.npy"
 
-    # Also overwrite st[:,1] so everything stays consistent
-    st = st.copy()
-    st[:, 1] = spike_clusters
+    if mapping_path.exists() and template_idx_path.exists():
+        logger.info("[ONLINE] Applying Template-to-Cluster mapping from offline results...")
+        off_templates = np.load(template_idx_path).reshape(-1)
+        off_clusters = np.load(mapping_path).reshape(-1)
+        
+        # Build map: Template ID -> Final Cluster ID
+        t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
+        spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
+    else:
+        logger.warning("[ONLINE] Cluster mapping not found; using cluster = template.")
+        spike_clusters = spike_templates
 
-    # ---------------------------
-    # Export to Phy on CPU to avoid CUDA OOM AND keep correct Wall layout for save_to_phy
-    # save_to_phy expects Wall as (K, Chan, PCs) where PCs = n_pcs
-    # ---------------------------
+    # ======================================================
+    # FIX: AUTOMATIC LABEL AND METADATA COPYING
+    # ======================================================
+    import shutil
+    for label_file in ["cluster_KSLabel.tsv", "cluster_group.tsv"]:
+        src = offline_dir / label_file
+        if src.exists():
+            shutil.copy(src, out_dir / label_file)
+            logger.info(f"[ONLINE] Copied {label_file} to online directory.")
 
-    Wall_export = Wall_phy
-    # If somehow Wall_phy is (K, PCs, Chan), convert back
-    if Wall_export.ndim == 3 and Wall_export.shape[-1] != n_pcs and Wall_export.shape[1] == n_pcs:
-        Wall_export = Wall_export.permute(0, 2, 1).contiguous()
-    Wall_export = Wall_export.detach().cpu()
-
-    # tF export on CPU
-    tF_export = tF.detach().cpu() if isinstance(tF, torch.Tensor) else tF
-
-    # ops['wPCA'] must be CPU torch tensor for save_to_phy (it calls .contiguous()).
-    if "wPCA" in ops:
-        if isinstance(ops["wPCA"], np.ndarray):
-            ops["wPCA"] = torch.from_numpy(ops["wPCA"]).contiguous()
-        elif isinstance(ops["wPCA"], torch.Tensor):
-            ops["wPCA"] = ops["wPCA"].detach().cpu().contiguous()
-
-    # Geometry fields must be numpy arrays (postprocessing uses torch.from_numpy on them)
-    for k in ["xc", "yc", "kcoords", "chanMap", "xblk", "yblk"]:
-        if k in ops and isinstance(ops[k], torch.Tensor):
-            ops[k] = ops[k].detach().cpu().numpy()
-
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    print("\n=== CHANNEL DEBUG BEFORE save_to_phy ===")
-    print("HOUR_SEC / tmin:", ops["settings"]["tmin"])
-    print("probe_path:", probe_path)
-    print("probe n_chan:", probe["n_chan"])
-    cm = probe["chanMap"]
-    print("chanMap min/max/len:", int(cm.min()), int(cm.max()), len(cm))
-
-    print("ops n_chan_bin:", ops.get("n_chan_bin", None))
-    print("ops n_chan:", ops.get("n_chan", None))
-
-
-    save_to_phy(
-        st=st,
-        clu=spike_clusters,
-        tF=tF_export,
-        Wall=Wall_export,
-        probe=probe,
-        ops=ops,
-        imin=imin,
-        results_dir=phy_dir,
-        data_dtype=ops["settings"].get("data_dtype", "int16"),
-        save_extra_vars=False,
-    )
-
-    np.save(out_dir / "st.npy", st)
-    np.save(out_dir / "tF.npy", tF_export.detach().cpu().numpy() if isinstance(tF_export, torch.Tensor) else np.array(tF_export))
+    # Save all results compatible with Phy/Comparison scripts
+    np.save(out_dir / "spike_times.npy", spike_times)
+    np.save(out_dir / "spike_templates.npy", spike_templates)
+    np.save(out_dir / "spike_clusters.npy", spike_clusters)
+    np.save(out_dir / "st.npy", st_abs)
+    np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
+    
+    # Save templates and ops for complete environment reproduction
+    if (offline_dir / "templates.npy").exists():
+        shutil.copy(offline_dir / "templates.npy", out_dir / "templates.npy")
+    
     save_ops(ops, results_dir=out_dir)
 
-    logger.info("[ONLINE] Done.")
-    return st, tF, ops
+    logger.info("[ONLINE] Online Phase Complete.")
+    return
+
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--bin", required=True, type=str)
-    ap.add_argument("--probe", required=True, type=str)
-    ap.add_argument("--out_offline", required=True, type=str)
-    ap.add_argument("--out_online", required=True, type=str)
-    ap.add_argument("--fs", required=True, type=float)
-    ap.add_argument("--nchan", required=True, type=int)
-    ap.add_argument("--dtype", default="int16", type=str)
-    ap.add_argument("--HOUR_SEC", type=float, required=True)
-    args = ap.parse_args()
+  ap = argparse.ArgumentParser()
+  ap.add_argument("--bin", required=True, type=str)
+  ap.add_argument("--probe", required=True, type=str)
+  ap.add_argument("--out_offline", required=True, type=str)
+  ap.add_argument("--out_online", required=True, type=str)
+  ap.add_argument("--fs", required=True, type=float)
+  ap.add_argument("--nchan", required=True, type=int)
+  ap.add_argument("--HOUR_SEC", type=float, required=True)
+  args = ap.parse_args()
 
-    offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.dtype,args.HOUR_SEC)
-    online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
+  global DO_CAR, CLEAR_CACHE, INVERT_SIGN, SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, DATA_DTYPE, DEVICE
+
+  DO_CAR = True
+  CLEAR_CACHE = False
+  INVERT_SIGN = False
+  SAVE_PREPROCESSED_COPY = False
+  VERBOSE_LOG = False
+  SAVE_EXTRA_VARS = True
+  DATA_DTYPE = 'int16'
+  DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+  offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
+  online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
 
 if __name__ == "__main__":
