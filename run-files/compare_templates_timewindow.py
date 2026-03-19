@@ -344,8 +344,14 @@ def main():
 
     # 2. Strict Time Window Alignment
     # We define the window based on when your Online Phase actually started
+    # Strict Windowing
     start_sample = int(args.t_start * fs)
-    end_sample = start_sample + int(args.t_duration * fs) if args.t_duration > 0 else np.inf
+    # If duration is -1, we go to the end of the FLOW file's range
+    if args.t_duration > 0:
+        end_sample = start_sample + int(args.t_duration * fs)
+    else:
+        # If no duration, use the max time found in the FLOW times
+        end_sample = flow_times.max() + 1 
 
     def apply_mask(t, c):
         mask = (t >= start_sample) & (t < end_sample)
@@ -358,6 +364,16 @@ def main():
     print(f"GUI spikes in window: {len(gui_t_win)}")
     print(f"FLOW spikes in window: {len(flow_t_win)}")
 
+    # Load Waveforms for Cosine Similarity
+    gui_templates, gui_spike_templates = _load_templates_and_spike_templates(gui_phy)
+    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(online_phy)
+
+    # This variable is used later in your script; we must define it
+    have_templates = (gui_templates is not None and flow_templates is not None)
+    
+    if not have_templates:
+        print("Warning: templates.npy or spike_templates.npy missing. Skipping Cosine Sim.")
+  
     # 3. Perform Matching
     # match_spike_times_tol returns indices of matching pairs
     i_gui, i_flow = match_spike_times_tol(gui_t_win, flow_t_win, tol=args.tol)
