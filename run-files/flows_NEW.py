@@ -380,9 +380,9 @@ def online_flow(bin_path: Path, probe_path: Path,
     template_idx_path = offline_dir / "spike_templates.npy"
 
     if mapping_path.exists() and template_idx_path.exists():
-        logger.info("[ONLINE] Applying Template-to-Cluster mapping from offline results...")
-        off_templates = np.load(template_idx_path).reshape(-1)
-        off_clusters = np.load(mapping_path).reshape(-1)
+        #logger.info("[ONLINE] Applying Template-to-Cluster mapping from offline results...")
+        #off_templates = np.load(template_idx_path).reshape(-1)
+        #off_clusters = np.load(mapping_path).reshape(-1)
         
         # Build map: Template ID -> Final Cluster ID
         #t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
