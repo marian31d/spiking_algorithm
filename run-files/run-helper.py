@@ -38,7 +38,7 @@ def run_flows(hour_sec: int, data: str):
     run_cmd(cmd)
 
 
-def run_compare(t_start: int, data:str, tol: int = 0):
+def run_compare(t_start: int, data: str, tol: int = 0):
     flow_phy = f"{data.FLOW_BASE}/online_{t_start}"
     out_dir = f"{data.COMPARE_BASE}/{t_start}-comp"
     Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -79,8 +79,8 @@ if __name__ == "__main__":
     data_l =[ms51,mp79,mds2]
 
     for d in data_l:
-        for t in data.HOUR_SECS:
-            run_flows(t,d)
+        for t in d.HOUR_SECS:
+            run_flows(hour_sec=t,data=d)
 
-        for t in data.HOUR_SECS:
-            run_compare(t_start=t, d,tol=12)
+        for t in d.HOUR_SECS:
+            run_compare(t_start=t, data=d,tol=12)
