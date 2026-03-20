@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 
 class data:
-    def __init__(self, BIN, PROBE, NACHN, GUI_PHY, FLOW_BASE, COMPARE_BASE, HOUR_SECS):
+    def __init__(self, BIN, PROBE, NCHAN, GUI_PHY, FLOW_BASE, COMPARE_BASE, HOUR_SECS):
         self.BIN = BIN
         self.PROBE=PROBE
         self.NCHAN=NCHAN
@@ -14,8 +14,6 @@ class data:
 FS = 20000
 DTYPE = "int16"
 
-# Use these if your folders are named online_1200, online_1800, ...
-HOUR_SECS = 
 
 
 def run_cmd(cmd: list[str]):
