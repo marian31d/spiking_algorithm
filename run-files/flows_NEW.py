@@ -385,8 +385,9 @@ def online_flow(bin_path: Path, probe_path: Path,
         off_clusters = np.load(mapping_path).reshape(-1)
         
         # Build map: Template ID -> Final Cluster ID
-        t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
-        spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
+        #t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
+        #spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
+        spike_clusters = spike_templates.copy() 
     else:
         logger.warning("[ONLINE] Cluster mapping not found; using cluster = template.")
         spike_clusters = spike_templates
