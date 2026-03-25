@@ -334,12 +334,12 @@ def online_flow(bin_path: Path, probe_path: Path,
         precision = 10000
         ops['Wrot'] = torch.round(ops['Wrot'] * precision) / precision
         logger.info("[ONLINE] Wrot precision reduced to 4 decimal places.")
-    
+
     # 2. Lower Nearest Channels (Reduce memory bandwidth)
     ops['settings']['nearest_chans'] = 8
-    
+
     # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
-    ops['settings']['max_iterations'] = 2 
+    ops['settings']['max_iterations'] = 2
 
     # Set window for the 'rest' of the data
     ops['settings']['tmin'] = float(HOUR_SEC)
@@ -347,7 +347,7 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     # Build binary file object with zero drift correction
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
-                                      zero_dshift=True)
+                                      zero_dshift=False)
 
     n_pcs = int(ops["settings"]["n_pcs"])
     if Wall.shape[1] == n_pcs:
@@ -358,7 +358,7 @@ def online_flow(bin_path: Path, probe_path: Path,
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
-    
+
     # Core SoC simulation: Template Matching
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
 
@@ -383,11 +383,11 @@ def online_flow(bin_path: Path, probe_path: Path,
         #logger.info("[ONLINE] Applying Template-to-Cluster mapping from offline results...")
         #off_templates = np.load(template_idx_path).reshape(-1)
         #off_clusters = np.load(mapping_path).reshape(-1)
-        
+
         # Build map: Template ID -> Final Cluster ID
         #t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
         #spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
-        spike_clusters = spike_templates.copy() 
+        spike_clusters = spike_templates.copy()
     else:
         logger.warning("[ONLINE] Cluster mapping not found; using cluster = template.")
         spike_clusters = spike_templates
@@ -408,11 +408,11 @@ def online_flow(bin_path: Path, probe_path: Path,
     np.save(out_dir / "spike_clusters.npy", spike_clusters)
     np.save(out_dir / "st.npy", st_abs)
     np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
-    
+
     # Save templates and ops for complete environment reproduction
     if (offline_dir / "templates.npy").exists():
         shutil.copy(offline_dir / "templates.npy", out_dir / "templates.npy")
-    
+
     save_ops(ops, results_dir=out_dir)
 
     logger.info("[ONLINE] Online Phase Complete.")
