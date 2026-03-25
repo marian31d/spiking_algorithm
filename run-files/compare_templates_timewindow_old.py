@@ -33,8 +33,8 @@ python compare_templates_timewindow.py \
   --gui_phy  /path/to/gui/phy \
   --flow_phy /path/to/flow/phy \
   --tol 0 \
-  --t_start 3000000 \
-  --t_end   6000000 \
+  --t_start 300 \
+  --t_end   600 \
   --out /path/to/outdir
 """
 
@@ -342,7 +342,7 @@ def main():
     flow_times = np.load(flow_phy / "spike_times.npy").astype(np.int64, copy=False).reshape(-1)
     flow_clu   = np.load(flow_phy / "spike_clusters.npy").astype(np.int64, copy=False).reshape(-1)
 
-    # Optional time window filter (applied to BOTH GUI and FLOW)
+    # Optional time window filter (applied to GUI)
     t_start = int(args.t_start*20000)
     t_end = int(args.t_end*20000)
     if t_start < 0:
@@ -452,12 +452,10 @@ def main():
             j_tmp = int(np.argmax(template_sim[i, :]))
             best_tmp_id = int(flow_ids[j_tmp])
             best_tmp_val = float(template_sim[i, j_tmp])
-            best_tmp_pct = 100.0 * (0.5 * (best_tmp_val + 1.0))  # maps [-1,1] -> [0,1]
 
         else:
             best_tmp_id = -1
             best_tmp_val = 0.0
-            best_tmp_pct = 0.0
 
 
         best_rows.append({
@@ -484,7 +482,6 @@ def main():
 
             "best_FLOW_by_template_sim": best_tmp_id,
             "template_sim": best_tmp_val,   
-            "template_sim_percent": best_tmp_pct,
 
         })
 
@@ -520,7 +517,6 @@ def main():
             "FLOW_spikes_matched": int(M[:, c].sum()),
 
             "template_sim": float(template_sim[r, c]) if template_sim is not None else 0.0,
-            "template_sim_percent": float(100.0 * template_sim[r, c]) if template_sim is not None else 0.0,
 
         })
     df_map = pd.DataFrame(map_rows)
@@ -619,9 +615,33 @@ def main():
     summary_lines.append("")
 
     if template_sim is not None:
-        summary_lines += stats_block("Template similarity (cosine)", template_sim)
-        summary_lines.append("")
+        all_gui = best_match_stats(template_sim, M, gui_ids, None, axis=1)
+        all_flow = best_match_stats(template_sim, M, flow_ids, None, axis=0)
 
+        good_gui = best_match_stats(template_sim, M, gui_ids, gui_good_set, axis=1)
+        good_flow = best_match_stats(template_sim, M, flow_ids, flow_good_set, axis=0)
+
+        summary_lines.append("Template similarity (cosine) best-match stats:")
+        summary_lines.append("Score definition:")
+        summary_lines.append("  -1 = opposite")
+        summary_lines.append("  0 = unrelated")
+        summary_lines.append("  1 = identical")
+        summary_lines.append("  ALL clusters:")
+        summary_lines.append(f"    GUI→FLOW: mean={all_gui['mean_best']:.4f}, "
+                             f"spike-wt={all_gui['spike_weighted_mean_best']:.4f}, "
+                             f"sqrt-wt={all_gui['sqrt_spike_weighted_mean_best']:.4f}  (n={all_gui['n_considered']})")
+        summary_lines.append(f"    FLOW→GUI: mean={all_flow['mean_best']:.4f}, "
+                             f"spike-wt={all_flow['spike_weighted_mean_best']:.4f}, "
+                             f"sqrt-wt={all_flow['sqrt_spike_weighted_mean_best']:.4f}  (n={all_flow['n_considered']})")
+        summary_lines.append("  GOOD-only:")
+        summary_lines.append(f"    GUI→FLOW: mean={good_gui['mean_best']:.4f}, "
+                             f"spike-wt={good_gui['spike_weighted_mean_best']:.4f}, "
+                             f"sqrt-wt={good_gui['sqrt_spike_weighted_mean_best']:.4f}  (n={good_gui['n_considered']})")
+        summary_lines.append(f"    FLOW→GUI: mean={good_flow['mean_best']:.4f}, "
+                             f"spike-wt={good_flow['spike_weighted_mean_best']:.4f}, "
+                             f"sqrt-wt={good_flow['sqrt_spike_weighted_mean_best']:.4f}  (n={good_flow['n_considered']})")
+        summary_lines.append("")
+        
 
     summary_lines += stats_block("Precision (O/|FLOW|)", precision)
     summary_lines.append("")
@@ -634,9 +654,8 @@ def main():
     summary_lines.append("Outputs:")
     summary_lines.append(f"  {out_dir / 'hungarian_mapping.csv'}")
     summary_lines.append(f"  {out_dir / 'per_gui_best_match.csv'}")
+    summary_lines.append(f"  {out_dir / 'heatmap_template_similarity.png'}")
     summary_lines.append(f"  {out_dir / 'heatmap_overlap_row_norm.png'}")
-    summary_lines.append(f"  {out_dir / 'heatmap_precision.png'}")
-    summary_lines.append(f"  {out_dir / 'heatmap_recall.png'}")
     summary_lines.append(f"  {out_dir / 'heatmap_f1.png'}")
     summary_lines.append(f"  {out_dir / 'heatmap_min_norm.png'}")
     summary_lines.append("")
@@ -652,14 +671,13 @@ def main():
         print("\nTOP 10 GUI 'good' by best f1_percent:")
         print(df_best_good.sort_values("f1_percent", ascending=False).head(10).to_string(index=False))
 
-    if "template_sim_percent" in df_best_good.columns:
-        print("\nTOP 10 GUI 'good' by best template_sim_percent:")
-        print(df_best_good.sort_values("template_sim_percent", ascending=False).head(10).to_string(index=False))
-
+        if "template_sim" in df_best_good.columns:
+            print("\nTOP 10 GUI 'good' by best template_sim:")
+            print(df_best_good.sort_values("template_sim", ascending=False).head(10).to_string(index=False))
     else:
         print("\n(no GUI 'good' units found in labels)")
 
-    print("\nDONE.")
+    print("\nDONE.")    
 
 
 if __name__ == "__main__":
