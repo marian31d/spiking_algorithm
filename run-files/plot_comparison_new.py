@@ -84,7 +84,14 @@ def plot_rows(x, labels, y_values, title, ylabel, force_percent_axis=True):
     plt.figure(figsize=(10, 6))
 
     for lbl, row in zip(labels, y_values):
-        plt.plot(x, row, label=lbl)
+        plt.plot(
+            x,
+            row,
+            marker='o',          # ← dots
+            linestyle='-',       # ← keep lines
+            markersize=4,
+            label=lbl
+        )
 
     plt.xlabel("Normalized time")
     plt.ylabel(ylabel)
@@ -100,7 +107,6 @@ def plot_rows(x, labels, y_values, title, ylabel, force_percent_axis=True):
             ymax = np.nanmax(finite_vals)
             ymin = np.nanmin(finite_vals)
 
-            # If values look like cosine similarity, use 0..1
             if ymax <= 1.05 and ymin >= -0.05:
                 plt.ylim(0, 1)
             else:
