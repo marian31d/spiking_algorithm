@@ -13,7 +13,10 @@ The CSV may contain multiple tables separated by blank or comma-only lines.
 Each table is plotted as one or two figures:
 
 - Main figure: all non-template-similarity rows
-- Separate figure: template-similarity rows only
+- Separate figure: only template-similarity rows:
+    * ts mean
+    * ts spk-wt
+    * ts sqt-wt
 
 For each table:
 - The first row defines the x-axis values (excluding the first column).
@@ -44,32 +47,30 @@ def split_tables(csv_path):
 
 
 def parse_table_block(block: str, sep: str = ",") -> pd.DataFrame:
-    """
-    Read a table block as raw cells (no header), so the first row can be used as x-axis.
-    """
     try:
         return pd.read_csv(StringIO(block), header=None, sep=sep)
     except Exception as e:
         raise RuntimeError(f"Failed to parse a table block as CSV (sep='{sep}'): {e}")
 
 
+def normalize_label(label: str) -> str:
+    return " ".join(str(label).strip().lower().split())
+
+
 def is_template_similarity_label(label: str) -> bool:
-    s = str(label).strip().lower()
-    return ("template" in s and "similarity" in s) or ("template" in s)
+    s = normalize_label(label)
+    return s in {"ts mean", "ts spk-wt", "ts sqt-wt"}
 
 
 def prepare_plot_data(df: pd.DataFrame, duration: float):
-    # X axis from first row (skip first column)
     x = pd.to_numeric(df.iloc[0, 1:], errors="coerce").to_numpy()
 
-    # Normalize to user duration
     if len(x) > 0:
         x = x / duration
 
     labels = df.iloc[1:, 0].astype(str).tolist()
     y_df = df.iloc[1:, 1:].apply(pd.to_numeric, errors="coerce")
 
-    # Keep matching length
     n = min(len(x), y_df.shape[1])
     x = x[:n]
     y_df = y_df.iloc[:, :n]
@@ -87,8 +88,8 @@ def plot_rows(x, labels, y_values, title, ylabel, force_percent_axis=True):
         plt.plot(
             x,
             row,
-            marker='o',          # ← dots
-            linestyle='-',       # ← keep lines
+            marker="o",
+            linestyle="-",
             markersize=4,
             label=lbl
         )
@@ -98,19 +99,16 @@ def plot_rows(x, labels, y_values, title, ylabel, force_percent_axis=True):
     plt.title(title)
     plt.grid(True, alpha=0.3)
 
-    if force_percent_axis:
-        plt.ylim(0, 100)
-    else:
-        finite_vals = np.asarray(y_values, dtype=float)
-        finite_vals = finite_vals[np.isfinite(finite_vals)]
-        if finite_vals.size > 0:
-            ymax = np.nanmax(finite_vals)
-            ymin = np.nanmin(finite_vals)
+    #  NEW: dynamic y-axis
+    finite_vals = np.asarray(y_values, dtype=float)
+    finite_vals = finite_vals[np.isfinite(finite_vals)]
 
-            if ymax <= 1.05 and ymin >= -0.05:
-                plt.ylim(0, 1)
-            else:
-                plt.ylim(0, 100)
+    if finite_vals.size > 0:
+        ymin = np.nanmin(finite_vals)
+        ymax = np.nanmax(finite_vals)
+
+        margin = 0.05 * (ymax - ymin if ymax > ymin else 1.0)
+        plt.ylim(ymin - margin, ymax + margin)
 
     plt.legend(fontsize=8, loc="best")
     plt.tight_layout()
@@ -134,7 +132,7 @@ def plot_table(df: pd.DataFrame, title: str, duration: float):
             non_template_labels.append(lbl)
             non_template_rows.append(row)
 
-    # Main figure: non-template metrics
+    # Main figure: everything except ts rows
     plot_rows(
         x,
         non_template_labels,
@@ -144,7 +142,7 @@ def plot_table(df: pd.DataFrame, title: str, duration: float):
         force_percent_axis=True,
     )
 
-    # Separate figure: template similarity only
+    # Separate figure: ts mean / ts spk-wt / ts sqt-wt only
     if len(template_labels) > 0:
         plot_rows(
             x,
