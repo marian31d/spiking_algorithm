@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import os
 
+#This script converts Wall, dshift and Wrot from npy arrays to header files .h
+
 def write_c_float_header(array_data, array_name, filename):
     """Flattens a numpy array and writes it as a C float header file."""
     flat_data = array_data.flatten()
