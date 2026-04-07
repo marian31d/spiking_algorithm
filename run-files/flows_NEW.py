@@ -345,7 +345,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops['settings']['tmin'] = float(HOUR_SEC)
     ops['settings']['tmax'] = float(np.inf)
 
-    # Build binary file object with zero drift correction
+    # Build binary file object
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
                                       zero_dshift=False)
 
