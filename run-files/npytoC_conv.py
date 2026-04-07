@@ -68,5 +68,15 @@ def main():
     else:
         print("dshift not found in ops.")
 
+    # --- 6. Extract and Write fwav (HP Filter) ---
+    fwav = ops.get("fwav", None)
+    if fwav is not None:
+        if isinstance(fwav, torch.Tensor):
+            fwav = fwav.detach().cpu().numpy()
+        fwav_h = os.path.join(offline_dir, "fwav.h")
+        write_c_float_header(fwav, "fwav_array", fwav_h)
+    else:
+        print("fwav not found in ops.")
+
 if __name__ == "__main__":
     main()
