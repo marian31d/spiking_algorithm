@@ -39,8 +39,8 @@ def main():
     # TIP: For your first test, you might want to slice Wall so it fits in L2 RAM.
     # To export just the first template, uncomment the next line:
     # Wall_np = Wall_np[0:1] 
-    
-    write_c_float_header(Wall_np, "Wall_templates", "Wall_templates.h")
+    Wall_h = os.path.join(offline_dir, "Wall_templates.h")
+    write_c_float_header(Wall_np, "Wall_templates", Wall_h)
 
     # --- 3. Load Ops (Contains Wrot and dshift) ---
     ops_path = os.path.join(offline_dir, "ops.npy")
@@ -53,7 +53,8 @@ def main():
         # If it is a PyTorch tensor, convert it to a NumPy array
         if isinstance(Wrot, torch.Tensor):
             Wrot = Wrot.detach().cpu().numpy()
-        write_c_float_header(Wrot, "Wrot_matrix", "Wrot.h")
+        Wrot_h = os.path.join(offline_dir, "Wrot.h")
+        write_c_float_header(Wrot, "Wrot_matrix", Wrot_h)
     else:
         print("Wrot not found in ops.")
 
@@ -62,7 +63,8 @@ def main():
     if dshift is not None:
         if isinstance(dshift, torch.Tensor):
             dshift = dshift.detach().cpu().numpy()
-        write_c_float_header(dshift, "dshift_array", "dshift.h")
+        dshift_h = os.path.join(offline_dir, "dshift.h")
+        write_c_float_header(dshift, "dshift_array", dshift_h)
     else:
         print("dshift not found in ops.")
 
