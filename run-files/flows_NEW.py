@@ -325,7 +325,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops = load_ops(offline_dir / "ops.npy", device=DEVICE)
     Wall_np = np.load(offline_dir / "Wall.npy")
     Wall = torch.from_numpy(Wall_np).to(DEVICE)
-
+    
     # ======================================================
     # SIMULATE SoC HARDWARE CONSTRAINTS
     # ======================================================
@@ -344,6 +344,9 @@ def online_flow(bin_path: Path, probe_path: Path,
     # Set window for the 'rest' of the data
     ops['settings']['tmin'] = float(HOUR_SEC)
     ops['settings']['tmax'] = float(np.inf)
+
+    #disable editing templates from data
+    ops['settings']['templates_from_data'] = False
 
     # Build binary file object
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
