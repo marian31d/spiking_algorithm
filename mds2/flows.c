@@ -16,7 +16,7 @@
 #define NT0MIN 20
 #define NEAREST_CHANS 8
 #define BUS_SIZE 4
-
+#define FB 128 //filter buffer size
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -24,7 +24,7 @@
 */
 
 
-struct batch { uint32_t ibatch[NT]; int16_t raw_batch[NT][NCHAN]; }; //Edit for the data types of both of the arrays
+struct batch { uint32_t start_time_index; int16_t raw_batch[NT][NCHAN]; }; //Edit for the data types of both of the arrays
 
 // Function to get the file size using POSIX stat
 uint64_t get_file_size_posix(const char *filename) {
@@ -51,11 +51,8 @@ int dma_read_block(FILE *fptr, int i, struct batch *batch_data) {
         fseek(fptr, NCHAN_BIN - NCHAN, SEEK_CUR);
     }
 
-    //filling up ibatch with the corresponding indices for the batch
-    //NOTE: this might be very inefficient to run on processor, check if actually needed
-    for (int j = 0; j < NT; j++) {
-        batch_data->ibatch[j] = i*NT + j;
-    }
+    //filling up ibatch with the start time for the batch
+    batch_data->start_time_index = i*NT;
 
     if (samples_read == NT) {
         return 0;
@@ -84,7 +81,7 @@ int dma_read_block(FILE *fptr, int i, struct batch *batch_data) {
                 int dest_idx = (t * NCHAN) + c;                 // Where we write
                 int src_idx  = last_valid_time_start_idx + c;   // Where we read from
                 
-                batch_data->ibatch[dest_idx] = batch_data->raw_batch[src_idx];    
+                batch_data->raw_batch[dest_idx] = batch_data->raw_batch[src_idx];    
             }
         }
         return 0; // Success! The batch is fully padded and ready for math.
@@ -92,30 +89,37 @@ int dma_read_block(FILE *fptr, int i, struct batch *batch_data) {
 }
 
 int filter_batch(const char *results_dir, struct batch *batch_data){
-    //In kilosort each batch was padded with nt in the first and last batch
+    //In kilosort each batch was padded with nt in the first and last batch but I shoud pad it with FB
     //for the last batch I'm not sure how the logic should be but for now I'll use batch index
-    int *ptr = (int*) malloc(sizeof(int) * 10); 
-    int16_t p_batch[NT+2*nt][NCHAN]; //temporary array for storing padded batch 
+    int total_rows = NT + 2 * FB;
+    int total_elements = total_rows * NCHAN;
+    int16_t *p_batch = (int16_t *)malloc(total_elements * sizeof(int16_t)); //temporary array for storing padded batch 
+    if (p_batch == NULL) {
+    // Handle out of memory
+    }
     int32_t b_mean[NCHAN]; //variable for storing the mean for each channel
-    for (j=0; j<NT+2*nt; j++){
-        if (j<nt){
+    for (j=0; j<NT+2*FB; j++){
+        if (j<FB){
             p_batch[j] = &batch_data->raw_batch[0];
         }
-        else if (j<(NT+nt)){
+        else if (j<(NT+FB)){
             p_batch[j] = &batch_data->raw_batch[j];
         }
         else {
-            p_batch[j] = &batch_data->raw_batch[NT+nt];
+            p_batch[j] = &batch_data->raw_batch[NT+FB];
         }
         b_mean += p_btach[j]; //sum over all samples for each channel after padding
     }
-    for (i=0; i<NT+2*nt; i++){
+    //we can probably free batch data structure.
+    for (i=0; i<NT+2*FB; i++){
         for (j=0; j<NCHAN; j++) {
         p_batch[i][j] - b_mean[j];
         }
     }
     //Filter each batch
-    int32_t f_batch 
+    int32_t f_batch [NT+2*FB][NCHAN];
+
+
 
 }
 
