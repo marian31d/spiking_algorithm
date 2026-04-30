@@ -114,6 +114,8 @@ int filter_batch(const char *results_dir, struct batch *batch_data){
         p_batch[i][j] - b_mean[j];
         }
     }
+    //Filter each batch
+    int32_t f_batch 
 
 }
 
