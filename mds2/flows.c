@@ -1,12 +1,13 @@
-#include <sys/stat.h>
+#include <sys/stat.h> //does not exist in bare metal
 #include <stdint.h>
 #include <stdio.h>
+#include <stirng.h>
 
 // Include array hearder files for configuration 
 #include "Wall_templates.h"
 #include "Wrot.h"
 #include "dshift.h"
-#include "fwav.h"
+#include "fir_weights.h"
 
 #define NCHAN_BIN 135
 #define NCHAN 128
@@ -16,11 +17,12 @@
 #define NT0MIN 20
 #define NEAREST_CHANS 8
 #define BUS_SIZE 4
-#define FB 128 //filter buffer size
+#define FB 35 //filter buffer size
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
-2. change the implementation of filtering the unused channel to better fit the Soc
+2. change the implementation of filtering the unused channel to better fit the Soc.
+3. storing the batch should be done by linker or memory pecific storing.
 */
 
 
@@ -58,7 +60,7 @@ int dma_read_block(FILE *fptr, int i, struct batch *batch_data) {
         return 0;
     }
     //handle an incomplete batch at the end of the file by padding with the last valid sample for each channel
-    if (samples_read > 0) {
+    else {
         printf("Partial batch detected at end of file. Padding the rest...\n");
         // 1. How many PERFECT time steps did we get?
         int valid_time_steps = samples_read / NCHAN;
@@ -98,27 +100,37 @@ int filter_batch(const char *results_dir, struct batch *batch_data){
     // Handle out of memory
     }
     int32_t b_mean[NCHAN]; //variable for storing the mean for each channel
-    for (j=0; j<NT+2*FB; j++){
-        if (j<FB){
-            p_batch[j] = &batch_data->raw_batch[0];
+    for (i=0; i<NT+2*FB; i++){
+        for (j=0; j<NCHAN; j++){
+            if (i<FB){
+                p_batch[i][j] = batch_data->raw_batch[0][j];
+            }
+            else if (i<(NT+FB)){
+                p_batch[i][j] = batch_data->raw_batch[i][j];
+            }
+            else {
+                p_batch[i][j] = batch_data->raw_batch[NT][j];
+            }
+            b_mean[j] += p_btach[i][j]; //sum over all samples for each channel after padding
         }
-        else if (j<(NT+FB)){
-            p_batch[j] = &batch_data->raw_batch[j];
-        }
-        else {
-            p_batch[j] = &batch_data->raw_batch[NT+FB];
-        }
-        b_mean += p_btach[j]; //sum over all samples for each channel after padding
     }
-    //we can probably free batch data structure.
+    
+    memset(batch_data->raw_batch, 0, (NT*NCHAN) * sizeof(int)); //for reseting the array
+    //subtract the mean
     for (i=0; i<NT+2*FB; i++){
         for (j=0; j<NCHAN; j++) {
-        p_batch[i][j] - b_mean[j];
+        p_batch[i][j] - (int16_t)(b_mean[j]/NT); //we need to divide by the number of samples for each channel
         }
     }
     //Filter each batch
-    int32_t f_batch [NT+2*FB][NCHAN];
-
+    for (b=0; b<NT; b++){   //batch loop
+        for (n=0; n<NCHAN; n++){    //channel loop
+            for (i=-71; i<72; i++){     //filter loop
+                &batch_data->raw_batch[b][n] += p_batch[b+i][n] * fir_weights[i];
+            }
+        }
+    }
+    //
 
 
 }
