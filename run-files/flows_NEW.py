@@ -213,6 +213,7 @@ def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, H
 
     logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
+
 def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshift=False):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
@@ -284,12 +285,6 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
                  fs: float, nchan: int, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
     probe = load_probe(probe_path)
-#-----------------------------------------------------------------------------------
-    cm = np.asarray(probe["chanMap"])
-    assert cm.ndim == 1
-    assert int(cm.min()) >= 0, f"chanMap min {cm.min()} < 0"
-    assert int(cm.max()) < int(nchan), f"chanMap max {cm.max()} >= nchan {nchan}"
-#-----------------------------------------------------------------------------------
 
     user_settings = {
         "fs": float(fs),
@@ -312,9 +307,24 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
                    results_dir, probe, settings, DATA_DTYPE, DEVICE, DO_CAR, CLEAR_CACHE, INVERT_SIGN,
                    SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, file_object=None, progress_bar=None, gui_sorter=None)
 
+    # ======================================================
+    # SAVES DRIFT MATRIX
+    # ======================================================
+    M = get_drift_matrix(ops, ops['dshift'], device=torch.device('cuda'))
+    Mul = (M @ ops['Wrot'])
+    if torch.is_tensor(Mul):
+        Mul_np = Mul.detach().cpu().numpy()
+    else:
+        Mul_np = Mul
+    # Save as standard numpy binary
+    save_path = os.path.join(result_dir, "Mul_np")
+    np.save(save_path, Mul_np)
+    print(f"Drift and Wrot matrix saved to: {save_path} with shape {Mul_np.shape}")[cite: 1]
+
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
     return
+
 
 def online_flow(bin_path: Path, probe_path: Path,
                 offline_dir: Path, out_dir: Path, HOUR_SEC: float):
@@ -325,7 +335,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops = load_ops(offline_dir / "ops.npy", device=DEVICE)
     Wall_np = np.load(offline_dir / "Wall.npy")
     Wall = torch.from_numpy(Wall_np).to(DEVICE)
-    
+
     # ======================================================
     # SIMULATE SoC HARDWARE CONSTRAINTS
     # ======================================================
@@ -345,8 +355,6 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops['settings']['tmin'] = float(HOUR_SEC)
     ops['settings']['tmax'] = float(np.inf)
 
-    #disable editing templates from data
-    ops['settings']['templates_from_data'] = False
 
     # Build binary file object
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
@@ -445,9 +453,8 @@ def main():
   DATA_DTYPE = 'int16'
   DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-  offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
+  #offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
   online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
-
 
 if __name__ == "__main__":
     main()
