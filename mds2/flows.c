@@ -10,7 +10,7 @@
 #include "fir_weights.h"
 
 #define NCHAN_BIN 135
-#define NCHAN 128
+#define NCHAN 126
 #define FS 20000
 #define NT 20480 //easier than 20000 for addrss math 
 #define nt 61
@@ -126,7 +126,7 @@ int filter_batch(const char *results_dir, struct batch *batch_data){
     for (b=0; b<NT; b++){   //batch loop
         for (n=0; n<NCHAN; n++){    //channel loop
             for (i=-71; i<72; i++){     //filter loop
-                &batch_data->raw_batch[b][n] += p_batch[b+i][n] * fir_weights[i];
+                batch_data->raw_batch[b][n] += p_batch[b+i][n] * fir_weights[i];
             }
         }
     }
