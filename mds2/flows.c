@@ -5,8 +5,7 @@
 
 // Include array hearder files for configuration 
 #include "Wall_templates.h"
-#include "Wrot.h"
-#include "dshift.h"
+#include "Wsh.h"
 #include "fir_weights.h"
 
 #define NCHAN_BIN 135
@@ -130,7 +129,8 @@ int filter_batch(const char *results_dir, struct batch *batch_data){
             }
         }
     }
-    //
+    //multiply by Wsh for drift correction and whitening
+
 
 
 }
