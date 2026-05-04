@@ -292,7 +292,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
         "n_pcs": 3,
-        "batch_size": 20000,
+        "batch_size": 20480,
         "nearest_chans": 8,
     }
 
@@ -752,7 +752,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
         "n_pcs": 3,
-        "batch_size": 20000,
+        "batch_size": 20480,
         "nearest_chans": 8,
     }
 
@@ -771,15 +771,24 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     # SAVES DRIFT MATRIX
     # ======================================================
     M = get_drift_matrix(ops, ops['dshift'], device=torch.device('cuda'))
-    Mul = (M @ ops['Wrot'])
-    if torch.is_tensor(Mul):
-        Mul_np = Mul.detach().cpu().numpy()
+    Wsh = (M @ ops['Wrot'])
+    if torch.is_tensor(Wsh):
+        Wsh_np = Wsh.detach().cpu().numpy()
     else:
-        Mul_np = Mul
+        Wsh_np = Wsh
     # Save as standard numpy binary
-    save_path = os.path.join(result_dir, "Mul_np")
-    np.save(save_path, Mul_np)
-    print(f"Drift and Wrot matrix saved to: {save_path} with shape {Mul_np.shape}")[cite: 1]
+    save_path = os.path.join(result_dir, "Wsh")
+    np.save(save_path, Wsh_np)
+    print(f"Drift and Wrot matrix saved to: {save_path} with shape {Wsh_np.shape}")
+                   
+    # ======================================================
+    # EXPORT wPCA FOR BARE-METAL C FIR FILTERS
+    # ======================================================
+    wPCA_tensor = ops.get('wPCA', None)
+    if wPCA_tensor is not None:
+        wPCA_np = wPCA_tensor.detach().cpu().numpy() if torch.is_tensor(wPCA_tensor) else wPCA_tensor
+        np.save(os.path.join(results_dir, "wPCA.npy"), wPCA_np)
+        logger.info(f"Exported wPCA master shapes for C hardware: {wPCA_np.shape}")
 
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
@@ -829,6 +838,10 @@ def online_flow(bin_path: Path, probe_path: Path,
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
+    
+    np.save(out_dir / "Wall_C_Aligned.npy", Wall_match.detach().cpu().numpy())
+    logger.info("[ONLINE] Exported properly aligned Wall_C_Aligned.npy for C hardware.")
+    # ----------------------------------------
 
     # Core SoC simulation: Template Matching
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
@@ -913,7 +926,7 @@ def main():
   DATA_DTYPE = 'int16'
   DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-  #offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
+  offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
   online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
 if __name__ == "__main__":
