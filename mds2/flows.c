@@ -89,7 +89,7 @@ int dma_read_block(FILE *fptr, int i, struct batch *batch_data) {
     }
 }
 
-int filter_batch(const char *results_dir, struct batch *batch_data){
+int filter_batch(struct batch *batch_data){
     //In kilosort each batch was padded with nt in the first and last batch but I shoud pad it with FB
     //for the last batch I'm not sure how the logic should be but for now I'll use batch index
     int total_rows = NT + 2 * FB;
@@ -113,14 +113,31 @@ int filter_batch(const char *results_dir, struct batch *batch_data){
             b_mean[j] += p_btach[i][j]; //sum over all samples for each channel after padding
         }
     }
-    
+    printf("Batch padded succesfuly", "size of pbatch is: ", sizeof(p_batch)/sizeof(pbatch[0][0]), "\n")
+
+    //expand and reset raw batch
+    int16_t *temp = (int16_t *)realloc(batch_data->raw_batch, total_elements * sizeof(int16_t));
+    if (temp == NULL) {
+        // Handle allocation failure (log error or exit)
+        printf("Error: Memory allocation failed for expanded batch!\n");
+        return(1);
+    } else {
+        // 3. Update the struct pointer to the new memory location
+        printf("Memory allocation successful for expanded batch!\n");
+        batch_data->raw_batch = temp;
+    }
     memset(batch_data->raw_batch, 0, (NT*NCHAN) * sizeof(int)); //for reseting the array
+    printf("Size of padded raw batch is: ", sizeof(batch_data->raw_batch)/sizeof(batch_data->raw_batch[0][0]), "\n")
+
     //subtract the mean
     for (i=0; i<NT+2*FB; i++){
         for (j=0; j<NCHAN; j++) {
         p_batch[i][j] - (int16_t)(b_mean[j]/NT); //we need to divide by the number of samples for each channel
         }
+        printf("mean for channel", j, "is:", (int16_t)(b_mean[j]/NT));
     }
+    printf("\nMean subtracted\n");
+
     //Filter each batch
     for (b=0; b<NT; b++){   //batch loop
         for (n=0; n<NCHAN; n++){    //channel loop
@@ -129,10 +146,18 @@ int filter_batch(const char *results_dir, struct batch *batch_data){
             }
         }
     }
+    printf("Bath filtered\n");
+
     //multiply by Wsh for drift correction and whitening
-
-
-
+    for (i=0; i<total_elements; i++){
+        for (w=0; w<NCHAN; w++){
+            for (j=0; j<NCHAN; j++){
+                batch_data->raw_batch[j][i] = Wsh[w][j] * batch_data->raw_batch[j][i]
+            }
+        }
+    }
+    printf("Applied drift correction and whitening\n");
+    return(0);
 }
 
 int __main__() {
@@ -141,7 +166,6 @@ int __main__() {
     char results_dir[] = "/data/results/mds2_results/flows_c";
     uint64_t binary_size = get_file_size_posix(filename);
 
-    
     // loop over binary file in batch_size for binary_size/batch_size times 
     // and process each batch.
     printf("Reading %d time steps from %s...\n", NT, filename);
@@ -153,11 +177,16 @@ int __main__() {
         }
     for (int i = 0; i < binary_size / NT; i++) {
         struct batch *b = (batch) malloc(sizeof(batch)); //memory allocation for each batch 
-        int r_ret = dma_read_block(fptr, results_dir, i, &b);
-        if (ret == 1) { // Check for error batch
+        int r_ret = dma_read_block(fptr, i, &b);
+        if (ret == 1) { // Check for error loading batch
+            printf("Error reading file and fetching data");
             break; // Skip processing this batch it's too small
         }
-        int f_ret = filter_batch()
+        int f_ret = filter_batch(&b)
+        if (f_ret == 1) { // Check for error filtering batch
+            printf("Error while filtering batch", i);
+            break;
+        }
 
         free(b);
     }
