@@ -839,6 +839,7 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     
+    #Need to save permuted Wall for the chip 
     np.save(out_dir / "Wall_C_Aligned.npy", Wall_match.detach().cpu().numpy())
     logger.info("[ONLINE] Exported properly aligned Wall_C_Aligned.npy for C hardware.")
     # ----------------------------------------
