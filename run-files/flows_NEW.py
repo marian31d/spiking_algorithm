@@ -311,7 +311,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     # ======================================================
     # SAVES DRIFT MATRIX
     # ======================================================
-    M = get_drift_matrix(ops, ops['dshift'], device=torch.device('cuda'))
+    M = get_drift_matrix(ops, ops['dshift'][-1], device=torch.device('cuda'))
     Wsh = (M @ ops['Wrot'])
     if torch.is_tensor(Wsh):
         Wsh_np = Wsh.detach().cpu().numpy()
