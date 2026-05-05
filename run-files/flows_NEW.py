@@ -41,6 +41,7 @@ from kilosort.run_kilosort import _sort
 from kilosort.parameters import DEFAULT_SETTINGS
 from kilosort.gui.logger import setup_logger
 from kilosort import template_matching
+from kilosort.preprocessing import get_drift_matrix
 
 """
 Two-stage Kilosort4 flow:
