@@ -311,7 +311,11 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     # ======================================================
     # SAVES DRIFT MATRIX
     # ======================================================
-    M = get_drift_matrix(ops, ops['dshift'][-1], device=torch.device('cuda'))
+    # Calculate the median drift across all batches (Time dimension = 0)
+    # This ignores sudden jolts and finds the most stable resting position
+    stable_drift_state = np.median(ops['dshift'], axis=0)
+    
+    M = get_drift_matrix(ops, stable_drift_state, device=torch.device('cuda'))
     Wsh = (M @ ops['Wrot'])
     if torch.is_tensor(Wsh):
         Wsh_np = Wsh.detach().cpu().numpy()
