@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 #This version of flows is deteministic and uses the exact same functions the gui uses to run
 # =========================
@@ -41,7 +42,7 @@ from kilosort.run_kilosort import _sort
 from kilosort.parameters import DEFAULT_SETTINGS
 from kilosort.gui.logger import setup_logger
 from kilosort import template_matching
-
+from kilosort.preprocessing import get_drift_matrix
 """
 Two-stage Kilosort4 flow:
   1) OFFLINE (first hour): learn templates (Wall) + export ops
@@ -213,6 +214,7 @@ def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, H
 
     logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
+
 def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshift=False):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
@@ -284,12 +286,6 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
                  fs: float, nchan: int, HOUR_SEC: float):
     out_dir = ensure_dir(out_dir)
     probe = load_probe(probe_path)
-#-----------------------------------------------------------------------------------
-    cm = np.asarray(probe["chanMap"])
-    assert cm.ndim == 1
-    assert int(cm.min()) >= 0, f"chanMap min {cm.min()} < 0"
-    assert int(cm.max()) < int(nchan), f"chanMap max {cm.max()} >= nchan {nchan}"
-#-----------------------------------------------------------------------------------
 
     user_settings = {
         "fs": float(fs),
@@ -297,7 +293,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
         "n_pcs": 3,
-        "batch_size": 60000,
+        "batch_size": 20480,
         "nearest_chans": 8,
     }
 
@@ -312,9 +308,33 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
                    results_dir, probe, settings, DATA_DTYPE, DEVICE, DO_CAR, CLEAR_CACHE, INVERT_SIGN,
                    SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, file_object=None, progress_bar=None, gui_sorter=None)
 
+    # ======================================================
+    # SAVES DRIFT MATRIX
+    # ======================================================
+    M = get_drift_matrix(ops, ops['dshift'][-1], device=torch.device('cuda'))
+    Wsh = (M @ ops['Wrot'])
+    if torch.is_tensor(Wsh):
+        Wsh_np = Wsh.detach().cpu().numpy()
+    else:
+        Wsh_np = Wsh
+    # Save as standard numpy binary
+    save_path = os.path.join(results_dir, "Wsh")
+    np.save(save_path, Wsh_np)
+    print(f"Drift and Wrot matrix saved to: {save_path} with shape {Wsh_np.shape}")
+
+    # ======================================================
+    # EXPORT wPCA FOR BARE-METAL C FIR FILTERS
+    # ======================================================
+    wPCA_tensor = ops.get('wPCA', None)
+    if wPCA_tensor is not None:
+        wPCA_np = wPCA_tensor.detach().cpu().numpy() if torch.is_tensor(wPCA_tensor) else wPCA_tensor
+        np.save(os.path.join(results_dir, "wPCA.npy"), wPCA_np)
+        logger.info(f"Exported wPCA master shapes for C hardware: {wPCA_np.shape}")
+
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
     return
+
 
 def online_flow(bin_path: Path, probe_path: Path,
                 offline_dir: Path, out_dir: Path, HOUR_SEC: float):
@@ -334,23 +354,21 @@ def online_flow(bin_path: Path, probe_path: Path,
         precision = 10000
         ops['Wrot'] = torch.round(ops['Wrot'] * precision) / precision
         logger.info("[ONLINE] Wrot precision reduced to 4 decimal places.")
-    
+
     # 2. Lower Nearest Channels (Reduce memory bandwidth)
     ops['settings']['nearest_chans'] = 8
-    
+
     # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
-    ops['settings']['max_iterations'] = 2 
-    
-    # 4. Simulate SoC low-latency streaming (e.g., 2000 samples = 100ms latency)
-    ops['settings']['batch_size'] = 2000
+    ops['settings']['max_iterations'] = 2
 
     # Set window for the 'rest' of the data
     ops['settings']['tmin'] = float(HOUR_SEC)
     ops['settings']['tmax'] = float(np.inf)
 
-    # Build binary file object with zero drift correction
+
+    # Build binary file object
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
-                                      zero_dshift=True)
+                                      zero_dshift=False)
 
     n_pcs = int(ops["settings"]["n_pcs"])
     if Wall.shape[1] == n_pcs:
@@ -361,7 +379,12 @@ def online_flow(bin_path: Path, probe_path: Path,
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
-    
+
+    #Need to save permuted Wall for the chip
+    np.save(out_dir / "Wall_C_Aligned.npy", Wall_match.detach().cpu().numpy())
+    logger.info("[ONLINE] Exported properly aligned Wall_C_Aligned.npy for C hardware.")
+    # ----------------------------------------
+
     # Core SoC simulation: Template Matching
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
 
@@ -383,13 +406,14 @@ def online_flow(bin_path: Path, probe_path: Path,
     template_idx_path = offline_dir / "spike_templates.npy"
 
     if mapping_path.exists() and template_idx_path.exists():
-        logger.info("[ONLINE] Applying Template-to-Cluster mapping from offline results...")
-        off_templates = np.load(template_idx_path).reshape(-1)
-        off_clusters = np.load(mapping_path).reshape(-1)
-        
+        #logger.info("[ONLINE] Applying Template-to-Cluster mapping from offline results...")
+        #off_templates = np.load(template_idx_path).reshape(-1)
+        #off_clusters = np.load(mapping_path).reshape(-1)
+
         # Build map: Template ID -> Final Cluster ID
-        t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
-        spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
+        #t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
+        #spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
+        spike_clusters = spike_templates.copy()
     else:
         logger.warning("[ONLINE] Cluster mapping not found; using cluster = template.")
         spike_clusters = spike_templates
@@ -410,11 +434,11 @@ def online_flow(bin_path: Path, probe_path: Path,
     np.save(out_dir / "spike_clusters.npy", spike_clusters)
     np.save(out_dir / "st.npy", st_abs)
     np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
-    
+
     # Save templates and ops for complete environment reproduction
     if (offline_dir / "templates.npy").exists():
         shutil.copy(offline_dir / "templates.npy", out_dir / "templates.npy")
-    
+
     save_ops(ops, results_dir=out_dir)
 
     logger.info("[ONLINE] Online Phase Complete.")
@@ -447,6 +471,5 @@ def main():
   offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
   online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
-
 if __name__ == "__main__":
-    main()
+    main(
