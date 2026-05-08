@@ -1,22 +1,23 @@
 #include <sys/stat.h> //does not exist in bare metal
 #include <stdint.h>
 #include <stdio.h>
-#include <stirng.h>
+#include <string.h>
 
 // Include array hearder files for configuration 
 #include "Wall_templates.h"
 #include "Wsh.h"
 #include "fir_weights.h"
+#include "wPCA.h"
 
 #define NCHAN_BIN 135
 #define NCHAN 126
 #define FS 20000
-#define NT 20480 //easier than 20000 for addrss math 
+#define NT 61 //easier than 20480 for addrss math 
 #define nt 61
 #define NT0MIN 20
 #define NEAREST_CHANS 8
 #define BUS_SIZE 4
-#define FB 35 //filter buffer size
+#define FB 35 //0.5 * filter buffer size 
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -24,8 +25,9 @@
 3. storing the batch should be done by linker or memory pecific storing.
 */
 
-
+//this structure should be located in TCM
 struct batch { uint32_t start_time_index; int16_t raw_batch[NT][NCHAN]; }; //Edit for the data types of both of the arrays
+int16_t temp[NT+2*FB][NCHAN]; //temporary array for storing padded batch 
 
 // Function to get the file size using POSIX stat
 uint64_t get_file_size_posix(const char *filename) {
@@ -47,9 +49,9 @@ int dma_read_block(FILE *fptr, int i, struct batch *batch_data) {
 
     /////////////Logic for discarding unused channels - not needed for Soc/////////////
     for (uint16_t s = 0; s < NT; s++) {
-        size_t samples_read = fread(&batch_data->raw_batch[s][0], sizeof(int16_t), 128, fptr);
+        size_t samples_read = fread(&batch_data->raw_batch[s][0], sizeof(int16_t), NCHAN_BIN - NCHAN, fptr);
         // 2. Jump the file pointer forward past the 7 dead channels
-        fseek(fptr, NCHAN_BIN - NCHAN, SEEK_CUR);
+        fseek(fptr, (NCHAN_BIN - NCHAN) * sizeof(int16_t), SEEK_CUR);
     }
 
     //filling up ibatch with the start time for the batch
@@ -90,74 +92,76 @@ int dma_read_block(FILE *fptr, int i, struct batch *batch_data) {
 }
 
 int filter_batch(struct batch *batch_data){
-    //In kilosort each batch was padded with nt in the first and last batch but I shoud pad it with FB
-    //for the last batch I'm not sure how the logic should be but for now I'll use batch index
-    int total_rows = NT + 2 * FB;
-    int total_elements = total_rows * NCHAN;
-    int16_t *p_batch = (int16_t *)malloc(total_elements * sizeof(int16_t)); //temporary array for storing padded batch 
-    if (p_batch == NULL) {
-    // Handle out of memory
-    }
-    int32_t b_mean[NCHAN]; //variable for storing the mean for each channel
-    for (i=0; i<NT+2*FB; i++){
-        for (j=0; j<NCHAN; j++){
+    //In kilosort each batch was padded with nt in the first and last batch but I shoud pad it with FB for the
+    //filter. Regarding the last batch I'm not sure how the logic should be but for now I'll use batch index
+    
+    int32_t b_mean[NCHAN] = {0}; //variable for storing the mean for each channel
+    for (int i=0; i<NT+2*FB; i++){
+        for (int j=0; j<NCHAN; j++){
             if (i<FB){
-                p_batch[i][j] = batch_data->raw_batch[0][j];
+                temp[i][j] = batch_data->raw_batch[FB][j];
             }
-            else if (i<(NT+FB)){
-                p_batch[i][j] = batch_data->raw_batch[i][j];
+            else if (i<NT){
+                temp[i][j] = batch_data->raw_batch[i][j];
             }
             else {
-                p_batch[i][j] = batch_data->raw_batch[NT][j];
+                temp[i][j] = batch_data->raw_batch[NT][j];
             }
-            b_mean[j] += p_btach[i][j]; //sum over all samples for each channel after padding
+            b_mean[j] += temp[i][j]; //sum over all samples for each channel after padding
         }
     }
-    printf("Batch padded succesfuly", "size of pbatch is: ", sizeof(p_batch)/sizeof(pbatch[0][0]), "\n")
-
-    //expand and reset raw batch
-    int16_t *temp = (int16_t *)realloc(batch_data->raw_batch, total_elements * sizeof(int16_t));
-    if (temp == NULL) {
-        // Handle allocation failure (log error or exit)
-        printf("Error: Memory allocation failed for expanded batch!\n");
-        return(1);
-    } else {
-        // 3. Update the struct pointer to the new memory location
-        printf("Memory allocation successful for expanded batch!\n");
-        batch_data->raw_batch = temp;
-    }
-    memset(batch_data->raw_batch, 0, (NT*NCHAN) * sizeof(int)); //for reseting the array
-    printf("Size of padded raw batch is: ", sizeof(batch_data->raw_batch)/sizeof(batch_data->raw_batch[0][0]), "\n")
+    printf("Batch padded succesfuly, size of temp memory is: %d\n", sizeof(temp)/sizeof(temp[0][0]))
 
     //subtract the mean
-    for (i=0; i<NT+2*FB; i++){
-        for (j=0; j<NCHAN; j++) {
-        p_batch[i][j] - (int16_t)(b_mean[j]/NT); //we need to divide by the number of samples for each channel
+    for (int i=0; i<NT+2*FB; i++){
+        for (int j=0; j<NCHAN; j++) {
+        temp[i][j] -= (int16_t)(b_mean[j]/NT); //we need to divide by the number of samples for each channel
+        printf("mean for channel %d is: %d", j, (int16_t)(b_mean[j]/NT));
         }
-        printf("mean for channel", j, "is:", (int16_t)(b_mean[j]/NT));
     }
     printf("\nMean subtracted\n");
 
+    //reset memory in order to do MAC 
+    memset(batch_data->raw_batch, 0, (NT*NCHAN) * sizeof(int)); //for reseting the array
+    printf("Raw data buffer is set to 0\n");
+
     //Filter each batch
-    for (b=0; b<NT; b++){   //batch loop
-        for (n=0; n<NCHAN; n++){    //channel loop
-            for (i=-71; i<72; i++){     //filter loop
-                batch_data->raw_batch[b][n] += p_batch[b+i][n] * fir_weights[i];
+    for (int b=0; b<NT; b++){   //batch loop
+        for (int n=0; n<NCHAN; n++){    //channel loop
+            int16_t filtered_val = 0;
+            for (int i=0; i<2*FB; i++){     //filter loop
+                filtered_val += temp[i+b][n] * fir_weights[i];
             }
+            batch_data->raw_batch[b][n] = filtered_val;
         }
     }
-    printf("Bath filtered\n");
+    printf("Batch filtered\n");
+
 
     //multiply by Wsh for drift correction and whitening
-    for (i=0; i<total_elements; i++){
-        for (w=0; w<NCHAN; w++){
-            for (j=0; j<NCHAN; j++){
-                batch_data->raw_batch[j][i] = Wsh[w][j] * batch_data->raw_batch[j][i]
+    for (int t=0; t<NT; t++){
+        float temp_clean_row[NCHAN] = {0}; 
+        for (int w = 0; w < NCHAN; w++) {
+            // Accumulate as a float to prevent integer overflow
+            // and preserve decimal precision from the Wsh matrix
+            int32_t sum = 0; 
+            for (int j = 0; j < NCHAN; j++) {
+                sum += (int32_t)batch_data->raw_batch[t][j] * Wsh[j][w]; 
             }
+            temp_clean_row[w] = sum;
+        }
+        for (int w = 0; w < NCHAN; w++) {
+            batch_data->raw_batch[t][w] = (int16_t)temp_clean_row[w];
         }
     }
     printf("Applied drift correction and whitening\n");
     return(0);
+}
+int template_match (struct batch *batch_data){
+    //we need a 3D array to hold the scores of the dot product
+    //raw_batch[128][20480]
+
+
 }
 
 int __main__() {
@@ -174,25 +178,25 @@ int __main__() {
     if (!fptr) {
         fprintf(stderr, "Error opening binary file");
         return -1; // Return error batch
-        }
+    }
+
+    struct batch b;
+
     for (int i = 0; i < binary_size / NT; i++) {
-        struct batch *b = (batch) malloc(sizeof(batch)); //memory allocation for each batch 
         int r_ret = dma_read_block(fptr, i, &b);
-        if (ret == 1) { // Check for error loading batch
+        if (r_ret == 1) { // Check for error loading batch
             printf("Error reading file and fetching data");
             break; // Skip processing this batch it's too small
         }
-        int f_ret = filter_batch(&b)
+        int f_ret = filter_batch(&b);
         if (f_ret == 1) { // Check for error filtering batch
             printf("Error while filtering batch", i);
             break;
         }
+        int m_ret = template_match(&b);
+        //here we need logic to move the current last Fb samples (careful not the padding)
+        //to the first FB samples of the next batch
 
-        free(b);
     }
     fclose(fptr);
 }
-
-    
-
-
