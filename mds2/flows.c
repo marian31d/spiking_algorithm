@@ -45,50 +45,36 @@ int dma_read_block(FILE *fptr, int i, struct batch *batch_data) {
     // This function should read the data from the specified filename
     // and store it in a suitable data structure for further processing.
     
-    //size_t samples_read = fread(batch_data->raw_batch, sizeof(int16_t), NT, fptr);
-
-    /////////////Logic for discarding unused channels - not needed for Soc/////////////
-    for (uint16_t s = 0; s < NT; s++) {
-        size_t samples_read = fread(&batch_data->raw_batch[s][0], sizeof(int16_t), NCHAN_BIN - NCHAN, fptr);
-        // 2. Jump the file pointer forward past the 7 dead channels
-        fseek(fptr, (NCHAN_BIN - NCHAN) * sizeof(int16_t), SEEK_CUR);
-    }
-
     //filling up ibatch with the start time for the batch
     batch_data->start_time_index = i*NT;
-
-    if (samples_read == NT) {
-        return 0;
-    }
-    //handle an incomplete batch at the end of the file by padding with the last valid sample for each channel
-    else {
-        printf("Partial batch detected at end of file. Padding the rest...\n");
-        // 1. How many PERFECT time steps did we get?
-        int valid_time_steps = samples_read / NCHAN;
-        // SAFETY CHECK: Did the file end before even giving us 1 full time step?
-        // If so, we don't have a "last valid sample" to copy. Throw it away!
-        if (valid_time_steps == 0) {
-            printf("End fragment too small. Discarding.\n");
-            return 1; 
+    /////////////Logic for discarding unused channels - not needed for Soc/////////////
+    for (uint16_t s = 0; s < NT; s++) {
+        size_t samples_read = fread(&batch_data->raw_batch[s][0], sizeof(int16_t), NCHAN, fptr);
+        
+        if (samples_read == NCHAN) {
+            // 2. Jump the file pointer forward past the 7 dead channels
+            fseek(fptr, (NCHAN_BIN - NCHAN) * sizeof(int16_t), SEEK_CUR);
         }
-        // 2. Find the starting index of the LAST perfect time step
-        // Example: If we have 5 valid steps (0 to 4), we want step 4.
-        int last_valid_time_start_idx = (valid_time_steps - 1) * NCHAN;
-        printf("Padding batch from time step %d to %d...\n", valid_time_steps, NT);
-        // 3. The Padding Loop
-        // We start 't' at the first MISSING or CORRUPTED time step
-        for (int t = valid_time_steps; t < NT; t++) {
-            
-            // Copy all 135 channels from the last valid step to the missing step
-            for (int c = 0; c < NCHAN; c++) {
-                int dest_idx = (t * NCHAN) + c;                 // Where we write
-                int src_idx  = last_valid_time_start_idx + c;   // Where we read from
-                
-                batch_data->raw_batch[dest_idx] = batch_data->raw_batch[src_idx];    
+        //handle an incomplete batch at the end of the file by padding with the last valid sample for each channel
+        else {
+            printf("Partial batch detected at index: %d. Padding the rest...\n", s);
+            // SAFETY CHECK: Did the file end before even giving us 1 full time step?
+            if (s == 0) {
+                printf("Error reading first batch, size is: %d.\n", samples_read);
+                return 1; 
             }
+            printf("Padding batch from time step %d to %d...\n", s, NT);
+            // 3. The Padding Loop
+            // We start 't' at the first MISSING or CORRUPTED time step
+            for (int t = s; t < NT; t++) {
+                for (int c = 0; c < NCHAN; c++) {
+                    batch_data->raw_batch[t][c] = batch_data->raw_batch[s - 1][c];    
+                }   
+            }
+            return 0; // Success! The batch is fully padded and ready for math.
         }
-        return 0; // Success! The batch is fully padded and ready for math.
     }
+    return 0; // Success! Reached the end of the 61 rows normally.
 }
 
 int filter_batch(struct batch *batch_data){
@@ -98,41 +84,40 @@ int filter_batch(struct batch *batch_data){
     int32_t b_mean[NCHAN] = {0}; //variable for storing the mean for each channel
     for (int i=0; i<NT+2*FB; i++){
         for (int j=0; j<NCHAN; j++){
-            if (i<FB){
-                temp[i][j] = batch_data->raw_batch[FB][j];
+            if (i < FB){
+                temp[i][j] = batch_data->raw_batch[0][j];
             }
-            else if (i<NT){
-                temp[i][j] = batch_data->raw_batch[i][j];
+            else if (i < (NT + FB)){
+                temp[i][j] = batch_data->raw_batch[i-FB][j];
             }
             else {
-                temp[i][j] = batch_data->raw_batch[NT][j];
+                temp[i][j] = batch_data->raw_batch[NT-1][j];
             }
             b_mean[j] += temp[i][j]; //sum over all samples for each channel after padding
         }
     }
-    printf("Batch padded succesfuly, size of temp memory is: %d\n", sizeof(temp)/sizeof(temp[0][0]))
+    printf("Batch padded succesfuly, size of temp memory is: %zu\n", sizeof(temp)/sizeof(temp[0][0]));
 
     //subtract the mean
     for (int i=0; i<NT+2*FB; i++){
         for (int j=0; j<NCHAN; j++) {
-        temp[i][j] -= (int16_t)(b_mean[j]/NT); //we need to divide by the number of samples for each channel
-        printf("mean for channel %d is: %d", j, (int16_t)(b_mean[j]/NT));
+        temp[i][j] -= (int16_t)(b_mean[j]/(NT+2*FB)); //we need to divide by the number of samples for each channel
         }
     }
     printf("\nMean subtracted\n");
 
     //reset memory in order to do MAC 
-    memset(batch_data->raw_batch, 0, (NT*NCHAN) * sizeof(int)); //for reseting the array
+    memset(batch_data->raw_batch, 0, (NT*NCHAN) * sizeof(int16_t)); //for reseting the array
     printf("Raw data buffer is set to 0\n");
 
     //Filter each batch
     for (int b=0; b<NT; b++){   //batch loop
         for (int n=0; n<NCHAN; n++){    //channel loop
-            int16_t filtered_val = 0;
+            float filtered_val = 0;
             for (int i=0; i<2*FB; i++){     //filter loop
                 filtered_val += temp[i+b][n] * fir_weights[i];
             }
-            batch_data->raw_batch[b][n] = filtered_val;
+            batch_data->raw_batch[b][n] = (int16_t)filtered_val;
         }
     }
     printf("Batch filtered\n");
@@ -144,9 +129,9 @@ int filter_batch(struct batch *batch_data){
         for (int w = 0; w < NCHAN; w++) {
             // Accumulate as a float to prevent integer overflow
             // and preserve decimal precision from the Wsh matrix
-            int32_t sum = 0; 
+            float sum = 0; 
             for (int j = 0; j < NCHAN; j++) {
-                sum += (int32_t)batch_data->raw_batch[t][j] * Wsh[j][w]; 
+                sum += (float)batch_data->raw_batch[t][j] * Wsh[j][w]; 
             }
             temp_clean_row[w] = sum;
         }
@@ -160,11 +145,10 @@ int filter_batch(struct batch *batch_data){
 int template_match (struct batch *batch_data){
     //we need a 3D array to hold the scores of the dot product
     //raw_batch[128][20480]
-
-
+    return(0);
 }
 
-int __main__() {
+int main() {
 
     char filename[] = "/data/mDs2/.../mds2.dat"; // Edit this path to the actual binary file location
     char results_dir[] = "/data/results/mds2_results/flows_c";
@@ -174,7 +158,7 @@ int __main__() {
     // and process each batch.
     printf("Reading %d time steps from %s...\n", NT, filename);
     FILE *fptr;
-    fptr = fopen(filename, "r");
+    fptr = fopen(filename, "rb");
     if (!fptr) {
         fprintf(stderr, "Error opening binary file");
         return -1; // Return error batch
@@ -185,12 +169,12 @@ int __main__() {
     for (int i = 0; i < binary_size / NT; i++) {
         int r_ret = dma_read_block(fptr, i, &b);
         if (r_ret == 1) { // Check for error loading batch
-            printf("Error reading file and fetching data");
+            printf("last batch is too small");
             break; // Skip processing this batch it's too small
         }
         int f_ret = filter_batch(&b);
-        if (f_ret == 1) { // Check for error filtering batch
-            printf("Error while filtering batch", i);
+        if (f_ret == -1) { // Check for error filtering batch
+            printf("Error while filtering batch %d\n", i);
             break;
         }
         int m_ret = template_match(&b);
