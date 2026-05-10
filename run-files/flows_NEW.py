@@ -379,17 +379,22 @@ def online_flow(bin_path: Path, probe_path: Path,
     # 'Wall' is loaded above as shape (N_TEMPLATES, NCHAN, NPCS)
     # The C code requires it in this exact shape, but strictly normalized to 1.0.
     wPCA_t = ops['wPCA'].to(DEVICE) # Shape: (NPCS, nt)
+
     # 1. Reconstruct the full waveform: (N, NCHAN, NPCS) @ (NPCS, nt) -> (N, NCHAN, nt)
     full_templates = torch.matmul(Wall, wPCA_t)
+
     # 2. Calculate the L2 Norm (amplitude) across spatial and temporal dimensions
     # keepdim=True creates a shape of (N_TEMPLATES, 1, 1) so it broadcasts perfectly
     norms = torch.sqrt(torch.sum(full_templates**2, dim=(1, 2), keepdim=True))
     norms[norms == 0] = 1.0 # Prevent divide-by-zero on empty clusters
+
     # 3. Divide Wall by the norm to shrink templates to exactly 1.0
     Wall_Normalized = Wall / norms
+
     # 4. Save for the C compiler!
     np.save(out_dir / "Wall_Normalized.npy", Wall_C_Normalized.detach().cpu().numpy())
     logger.info(f"[ONLINE] Exported purely mathematical unit-shapes: Wall_Normalized.npy")
+    
     # ======================================================
     n_pcs = int(ops["settings"]["n_pcs"])
     if Wall.shape[1] == n_pcs:
