@@ -311,7 +311,6 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     # ======================================================
     # SAVES DRIFT MATRIX
     # ======================================================
-
     # Calculate the median drift across all batches (Time dimension = 0)
     # This ignores sudden jolts and finds the most stable resting position
     stable_drift_state = np.median(ops['dshift'], axis=0)
@@ -370,36 +369,28 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops['settings']['tmin'] = float(HOUR_SEC)
     ops['settings']['tmax'] = float(np.inf)
 
-
     # Build binary file object
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
                                       zero_dshift=False)
-
-    n_pcs = int(ops["settings"]["n_pcs"])
+                  
     # ======================================================
     # C HARDWARE EXPORT: NORMALIZE WALL TO 1.0
     # ======================================================
     # 'Wall' is loaded above as shape (N_TEMPLATES, NCHAN, NPCS)
     # The C code requires it in this exact shape, but strictly normalized to 1.0.
-    
     wPCA_t = ops['wPCA'].to(DEVICE) # Shape: (NPCS, nt)
-    
     # 1. Reconstruct the full waveform: (N, NCHAN, NPCS) @ (NPCS, nt) -> (N, NCHAN, nt)
     full_templates = torch.matmul(Wall, wPCA_t)
-    
     # 2. Calculate the L2 Norm (amplitude) across spatial and temporal dimensions
     # keepdim=True creates a shape of (N_TEMPLATES, 1, 1) so it broadcasts perfectly
     norms = torch.sqrt(torch.sum(full_templates**2, dim=(1, 2), keepdim=True))
     norms[norms == 0] = 1.0 # Prevent divide-by-zero on empty clusters
-    
     # 3. Divide Wall by the norm to shrink templates to exactly 1.0
     Wall_Normalized = Wall / norms
-    
     # 4. Save for the C compiler!
     np.save(out_dir / "Wall_Normalized.npy", Wall_C_Normalized.detach().cpu().numpy())
     logger.info(f"[ONLINE] Exported purely mathematical unit-shapes: Wall_Normalized.npy")
     # ======================================================
-
     n_pcs = int(ops["settings"]["n_pcs"])
     if Wall.shape[1] == n_pcs:
         Wall_match = Wall
@@ -407,11 +398,13 @@ def online_flow(bin_path: Path, probe_path: Path,
         Wall_match = Wall.permute(0, 2, 1).contiguous()
     else:
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
-
+      
+    np.save(out_dir / "Wall_C_Aligned.npy", Wall_match.detach().cpu().numpy())
+    logger.info("[ONLINE] Exported properly aligned Wall_C_Aligned.npy for C hardware.")
+    # ----------------------------------------
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
-
     # Core SoC simulation: Template Matching
-    # Notice we pass the original un-normalized 'Wall_match' here so Kilosort 
+    # We pass the original un-normalized 'Wall_match' here so Kilosort 
     # runs exactly as it always has.
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
 
@@ -467,10 +460,8 @@ def online_flow(bin_path: Path, probe_path: Path,
         shutil.copy(offline_dir / "templates.npy", out_dir / "templates.npy")
 
     save_ops(ops, results_dir=out_dir)
-
     logger.info("[ONLINE] Online Phase Complete.")
     return
-
 
 
 def main():
