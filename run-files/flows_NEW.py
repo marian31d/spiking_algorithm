@@ -364,7 +364,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops['settings']['nearest_chans'] = 8
 
     # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
-    ops['settings']['max_peels'] = 2
+    ops['max_peels'] = 2
 
     # Set window for the 'rest' of the data
     ops['settings']['tmin'] = float(HOUR_SEC)
