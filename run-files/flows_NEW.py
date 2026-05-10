@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 #This version of flows is deteministic and uses the exact same functions the gui uses to run
 # =========================
@@ -42,7 +43,6 @@ from kilosort.parameters import DEFAULT_SETTINGS
 from kilosort.gui.logger import setup_logger
 from kilosort import template_matching
 from kilosort.preprocessing import get_drift_matrix
-
 """
 Two-stage Kilosort4 flow:
   1) OFFLINE (first hour): learn templates (Wall) + export ops
@@ -293,7 +293,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
         "n_pcs": 3,
-        "batch_size": 20480,
+        "batch_size": 32768,
         "nearest_chans": 8,
     }
 
@@ -311,17 +311,22 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     # ======================================================
     # SAVES DRIFT MATRIX
     # ======================================================
-    M = get_drift_matrix(ops, ops['dshift'][-1], device=torch.device('cuda'))
+
+    # Calculate the median drift across all batches (Time dimension = 0)
+    # This ignores sudden jolts and finds the most stable resting position
+    stable_drift_state = np.median(ops['dshift'], axis=0)
+
+    M = get_drift_matrix(ops, stable_drift_state, device=torch.device('cuda'))
     Wsh = (M @ ops['Wrot'])
     if torch.is_tensor(Wsh):
         Wsh_np = Wsh.detach().cpu().numpy()
     else:
         Wsh_np = Wsh
     # Save as standard numpy binary
-    save_path = os.path.join(result_dir, "Wsh")
+    save_path = os.path.join(results_dir, "Wsh")
     np.save(save_path, Wsh_np)
     print(f"Drift and Wrot matrix saved to: {save_path} with shape {Wsh_np.shape}")
-                   
+
     # ======================================================
     # EXPORT wPCA FOR BARE-METAL C FIR FILTERS
     # ======================================================
@@ -359,7 +364,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops['settings']['nearest_chans'] = 8
 
     # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
-    ops['settings']['max_iterations'] = 2
+    ops['settings']['max_peels'] = 2
 
     # Set window for the 'rest' of the data
     ops['settings']['tmin'] = float(HOUR_SEC)
@@ -371,6 +376,31 @@ def online_flow(bin_path: Path, probe_path: Path,
                                       zero_dshift=False)
 
     n_pcs = int(ops["settings"]["n_pcs"])
+    # ======================================================
+    # C HARDWARE EXPORT: NORMALIZE WALL TO 1.0
+    # ======================================================
+    # 'Wall' is loaded above as shape (N_TEMPLATES, NCHAN, NPCS)
+    # The C code requires it in this exact shape, but strictly normalized to 1.0.
+    
+    wPCA_t = ops['wPCA'].to(DEVICE) # Shape: (NPCS, nt)
+    
+    # 1. Reconstruct the full waveform: (N, NCHAN, NPCS) @ (NPCS, nt) -> (N, NCHAN, nt)
+    full_templates = torch.matmul(Wall, wPCA_t)
+    
+    # 2. Calculate the L2 Norm (amplitude) across spatial and temporal dimensions
+    # keepdim=True creates a shape of (N_TEMPLATES, 1, 1) so it broadcasts perfectly
+    norms = torch.sqrt(torch.sum(full_templates**2, dim=(1, 2), keepdim=True))
+    norms[norms == 0] = 1.0 # Prevent divide-by-zero on empty clusters
+    
+    # 3. Divide Wall by the norm to shrink templates to exactly 1.0
+    Wall_Normalized = Wall / norms
+    
+    # 4. Save for the C compiler!
+    np.save(out_dir / "Wall_Normalized.npy", Wall_C_Normalized.detach().cpu().numpy())
+    logger.info(f"[ONLINE] Exported purely mathematical unit-shapes: Wall_Normalized.npy")
+    # ======================================================
+
+    n_pcs = int(ops["settings"]["n_pcs"])
     if Wall.shape[1] == n_pcs:
         Wall_match = Wall
     elif Wall.shape[2] == n_pcs:
@@ -379,13 +409,10 @@ def online_flow(bin_path: Path, probe_path: Path,
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
 
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
-    
-    #Need to save permuted Wall for the chip 
-    np.save(out_dir / "Wall_C_Aligned.npy", Wall_match.detach().cpu().numpy())
-    logger.info("[ONLINE] Exported properly aligned Wall_C_Aligned.npy for C hardware.")
-    # ----------------------------------------
 
     # Core SoC simulation: Template Matching
+    # Notice we pass the original un-normalized 'Wall_match' here so Kilosort 
+    # runs exactly as it always has.
     st, tF, ops = template_matching.extract(ops, bfile_rest, Wall_match, device=DEVICE)
 
     # Convert to absolute coordinates
