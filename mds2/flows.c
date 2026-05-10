@@ -4,7 +4,7 @@
 #include <string.h>
 
 // Include array hearder files for configuration 
-#include "Wall_templates.h"
+#include "Wall_Normal.h"
 #include "Wsh.h"
 #include "fir_weights.h"
 #include "wPCA.h"
@@ -14,14 +14,14 @@
 #define FS 20000
 #define NT 32768
 #define nt 61
-#define NT0MIN 20
+#define NT0MIN 20 //probably not needed
 #define NEAREST_CHANS 8
-#define BUS_SIZE 4
 #define FB 35       //0.5 * filter buffer size 
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
 #define TH 8    //check if it's constant
 #define MAX_SPIKES_PER_BATCH 10000      //ask Eran about this
+#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -176,49 +176,98 @@ int filter_batch(struct batch *batch_data){
     printf("Applied drift correction and whitening\n");
     return(0);
 }
-int template_match (struct batch *batch_data, struct SpikeEvent *st, int *spike_count){
-    *spike_count = 0;
+
+// static inline suggests the compiler inline the assembly to avoid call overhead
+static inline void get_max_score_at_time(struct batch *batch_data, int time_idx, float *out_max_score, int *out_best_t_id) {
+    float pc_scores[NCHAN][NPCS]; 
     //raw_batch[61][128] || wPCA[3][61] 
     //we calculate the temporal scores and eleminate the temporal dimension
-    float pc_scores[NCHAN][NPCS];   //we need a 2D array to hold the scores of the dot product
-    for(int b = 0; b < NT-nt; b++){
-        float p_score = 0;
+    // 1. Temporal Dot Product
+    for(int c = 0; c < NCHAN; c++){
+        for(int p = 0; p < NPCS; p++){
+            float score = 0;
+            for(int s = 0; s < nt; s++){
+                score += batch_data->raw_batch[time_idx + s][c] * wPCA[p][s];
+            }
+            pc_scores[c][p] = score;
+        }
+    }
+    // 2. Spatial Collapse & Winner Selection
+    *out_max_score = 0.0f;
+    *out_best_t_id = -1;
+    for(int t = 0; t < NCLU; t++){
+        float c_score = 0.0f;
         for(int c = 0; c < NCHAN; c++){
             for(int p = 0; p < NPCS; p++){
-                float score = 0;
-                for(int s = 0; s < nt; s++){
-                    score += batch_data->raw_batch[b + s][c] * wPCA[p][s];
-                }
-                pc_scores[c][p] = score;
+                c_score += pc_scores[c][p] * Wall_Normal[t][c][p];
             }
         }
-        //Wall[NCLU][NCHAN][NPCS]
-        //we calculate the spatial scores and get a final score for each
-        float max_score = 0.0f;
-        int best_t_id = -1;
-        float t_scores[NCLU] = {0};
-        for(int t = 0; t < NCLU; t++){
-            float c_score = {0};
-            for(int c = 0; c < NCHAN; c++){
-                for(int p = 0; p < NPCS; p++){
-                    c_score += pc_scores[c][p] * Wall_templates[t][c][p];
-                }
+        if (c_score > *out_max_score){
+            *out_max_score = c_score;
+            *out_best_t_id = t;
+        }
+    }
+}
+
+int template_match (struct batch *batch_data, struct SpikeEvent *st, int *spike_count, int match){
+    *spike_count = 0;
+    // 1-Sample Delay variables to find the physical peak
+    float prev_max_score = 0.0f;
+    int prev_best_t_id = -1;
+    for(int b = 0; b < NT - nt; b++){
+        float max_score;
+        int best_t_id;
+        // --- SCANNING PHASE ---
+        // Calculate the score for the current microsecond
+        get_max_score_at_time(batch_data, b, &max_score, &best_t_id);
+
+        // --- PEAK DETECTION & PEELING PHASE ---
+        // If the PREVIOUS microsecond was above threshold AND was higher than the current...
+        if(prev_max_score > TH && prev_max_score > max_score){
+            // We lock onto the exact peak of the spike!
+            int target_b = b - 1;
+            float target_score = prev_max_score;
+            int target_t_id = prev_best_t_id;
+            
+            for(int iter = 0; iter < MAX_PEELS; iter++) {
                 
-            }
-            if (c_score > max_score){   //update maximum score
-                max_score = c_score;
-                best_t_id = t;
-            }
+                // 1. Record the Spike
+                if(*spike_count < MAX_SPIKES_PER_BATCH){
+                    st[*spike_count].absolute_time = (batch_data->start_time_index * NT) + target_b;
+                    st[*spike_count].template_id = target_t_id;
+                    st[*spike_count].score = target_score;
+                    (*spike_count)++;
+                }
+                // 2. Reconstruct and Subtract (Erase the spike)
+                for(int c = 0; c < NCHAN; c++){
+                    float scaled_wall[NPCS];
+                    for(int p = 0; p < NPCS; p++){
+                        scaled_wall[p] = target_score * Wall_Normal[target_t_id][c][p];
+                    }
+                    for(int s = 0; s < nt; s++){
+                        float reconstructed_voltage = 0.0f;
+                        for(int p = 0; p < NPCS; p++){
+                            reconstructed_voltage += scaled_wall[p] * wPCA[p][s];
+                        }
+                        // Erase from target_b
+                        batch_data->raw_batch[target_b + s][c] -= (int16_t)reconstructed_voltage;
+                    }
+                }
+                // 3. Recalculate to see if another spike was hiding underneath!
+                get_max_score_at_time(batch_data, target_b, &target_score, &target_t_id);
+                
+                // 4. Break Condition
+                if (target_score <= TH) {
+                    break; // No more spikes crossing the threshold here. Stop peeling!
+                }
+            } // end iter loop
+            
+            // Reset max_score so we don't accidentally trigger again as the wave falls
+            max_score = 0.0f;
         }
-        //check if the score crosses this threshold
-        if(max_score > TH){
-            if(*spike_count < MAX_SPIKES_PER_BATCH){
-                st[*spike_count].absolute_time = (batch_data->start_time_index * NT) + b;
-                st[*spike_count].template_id = best_t_id;
-                st[*spike_count].score = max_score;
-                (*spike_count)++;
-            }
-        }
+        // Save state for the next time step
+        prev_max_score = max_score;
+        prev_best_t_id = best_t_id;
     }
     return(0);
 }
@@ -254,7 +303,7 @@ int main() {
             printf("Error while filtering batch %d\n", i);
             break;
         }
-        int m_ret = template_match(&b, st, &num_spikes);
+        int m_ret = template_match(&b, st, &num_spikes, 1);
     }
     fclose(fptr);
 }
