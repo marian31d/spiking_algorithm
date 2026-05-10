@@ -210,7 +210,6 @@ static inline void get_max_score_at_time(struct batch *batch_data, int time_idx,
 }
 
 int template_match (struct batch *batch_data, struct SpikeEvent *st, int *spike_count, int match){
-    *spike_count = 0;
     // 1-Sample Delay variables to find the physical peak
     float prev_max_score = 0.0f;
     int prev_best_t_id = -1;
