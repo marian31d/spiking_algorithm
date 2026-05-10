@@ -404,8 +404,8 @@ def online_flow(bin_path: Path, probe_path: Path,
     else:
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
       
-    np.save(out_dir / "Wall_C_Aligned.npy", Wall_match.detach().cpu().numpy())
-    logger.info("[ONLINE] Exported properly aligned Wall_C_Aligned.npy for C hardware.")
+    np.save(out_dir / "Wall_permuted.npy", Wall_match.detach().cpu().numpy())
+    logger.info("[ONLINE] Exported properly aligned Wall_permuted.npy for C hardware.")
     # ----------------------------------------
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     # Core SoC simulation: Template Matching
