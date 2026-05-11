@@ -14,8 +14,6 @@
 #define FS 20000
 #define NT 32768
 #define nt 61
-#define NT0MIN 20 //probably not needed
-#define NEAREST_CHANS 8
 #define FB 35       //0.5 * filter buffer size 
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
