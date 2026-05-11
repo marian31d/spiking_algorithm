@@ -361,13 +361,17 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     # 2. Lower Nearest Channels (Reduce memory bandwidth)
     ops['settings']['nearest_chans'] = 8
+    ops['nearest_chans'] = 8  # Sync root
 
     # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
+    ops['settings']['max_peels'] = 2
     ops['max_peels'] = 2
 
     # Set window for the 'rest' of the data
     ops['settings']['tmin'] = float(HOUR_SEC)
+    ops['tmin'] = float(HOUR_SEC) # Sync root
     ops['settings']['tmax'] = float(np.inf)
+    ops['tmax'] = float(np.inf)   # Sync root
 
     # Build binary file object
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
@@ -392,9 +396,9 @@ def online_flow(bin_path: Path, probe_path: Path,
     Wall_Normalized = Wall / norms
 
     # 4. Save for the C compiler!
-    np.save(out_dir / "Wall_Normalized.npy", Wall_C_Normalized.detach().cpu().numpy())
+    np.save(out_dir / "Wall_Normalized.npy", Wall_Normalized.detach().cpu().numpy())
     logger.info(f"[ONLINE] Exported purely mathematical unit-shapes: Wall_Normalized.npy")
-    
+
     # ======================================================
     n_pcs = int(ops["settings"]["n_pcs"])
     if Wall.shape[1] == n_pcs:
