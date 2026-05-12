@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 // Include array hearder files for configuration 
 #include "Wall_Normal.h"
@@ -216,6 +217,44 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
     } // end iter loop
     return(0);
 }
+// Function to write 1D arrays into Python-compatible .npy files
+void save_npy(const char* filename, void* data, size_t num_elements, size_t element_size, const char* dtype) {
+    FILE* f = fopen(filename, "wb");
+    if (!f) {
+        fprintf(stderr, "Failed to open %s for writing\n", filename);
+        return;
+    }
+    
+    char header_dict[256];
+    // Create the python dictionary header string required by the NPY format
+    snprintf(header_dict, sizeof(header_dict), "{'descr': '%s', 'fortran_order': False, 'shape': (%zu,), }", dtype, num_elements);
+    
+    size_t dict_len = strlen(header_dict);
+    size_t header_len = dict_len + 1; // +1 for the newline character at the end
+    
+    // The total header length (magic + versions + len + dict + padding) must be evenly divisible by 64
+    // Magic string length is 6, versions is 2, length indicator is 2 (total 10 bytes)
+    size_t padding = 64 - ((10 + header_len) % 64);
+    if (padding == 64) padding = 0;
+    
+    uint16_t total_header_len = (uint16_t)(header_len + padding);
+    
+    // Write NPY Magic string and version (1.0)
+    fwrite("\x93NUMPY\x01\x00", 1, 8, f);
+    // Write total header length (little endian)
+    fwrite(&total_header_len, 2, 1, f);
+    // Write the dictionary string
+    fwrite(header_dict, 1, dict_len, f);
+    // Pad with spaces
+    for(size_t i = 0; i < padding; i++) fputc(' ', f);
+    fputc('\n', f);
+    
+    // Write the actual binary data
+    fwrite(data, element_size, num_elements, f);
+    fclose(f);
+    
+    printf("Saved %u spikes to %s\n", (uint32_t)num_elements, filename);
+}
 
 int main() {
 
@@ -250,4 +289,44 @@ int main() {
         int m_ret = template_match(&sample, spike_results, &num_spikes, 1, i);
     }
     fclose(fptr);
+    // ---------- END OF BATCH PROCESSING LOOP ----------
+    
+    printf("\nProcessing complete. Detected %u spikes.\nSaving results in Kilosort format...\n", num_spikes);
+    
+    // 1. Allocate flat arrays for Kilosort output types
+    // Note: Kilosort prefers int64 for time, int32 for templates, and float64 for amplitudes
+    int64_t *spike_times    = (int64_t *)malloc(num_spikes * sizeof(int64_t));
+    int32_t *spike_templates = (int32_t *)malloc(num_spikes * sizeof(int32_t));
+    double  *amplitudes     = (double *)malloc(num_spikes * sizeof(double));
+
+    if (!spike_times || !spike_templates || !amplitudes) {
+        fprintf(stderr, "Memory allocation failed for output arrays.\n");
+        return -1;
+    }
+
+    // 2. Unpack the structs into the flat arrays
+    for (uint32_t k = 0; k < num_spikes; k++) {
+        spike_times[k]     = (int64_t)spike_results[k].absolute_time;
+        spike_templates[k] = (int32_t)spike_results[k].template_id;
+        amplitudes[k]      = (double)spike_results[k].score;
+    }
+
+    // 3. Format the file paths
+    char times_file[256], temp_file[256], amp_file[256];
+    snprintf(times_file, sizeof(times_file), "%s/spike_times.npy", results_dir);
+    snprintf(temp_file,  sizeof(temp_file),  "%s/spike_templates.npy", results_dir);
+    snprintf(amp_file,   sizeof(amp_file),   "%s/amplitudes.npy", results_dir);
+
+    // 4. Save as .npy using Little-Endian NumPy types (<i8, <i4, <f8)
+    save_npy(times_file, spike_times,     num_spikes, sizeof(int64_t), "<i8");
+    save_npy(temp_file,  spike_templates, num_spikes, sizeof(int32_t), "<i4");
+    save_npy(amp_file,   amplitudes,      num_spikes, sizeof(double),  "<f8");
+
+    // 5. Clean up RAM
+    free(spike_times);
+    free(spike_templates);
+    free(amplitudes);
+
+    printf("Done!\n");
+    return 0;
 }
