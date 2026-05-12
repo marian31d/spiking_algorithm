@@ -29,7 +29,7 @@ def write_c_float_header(array_data, array_name, filename):
         
     print(f"Generated {filename} ({len(flat_data)} elements as floats)")
 
-def get_iir_weights(result_dir)
+def get_iir_weights(result_dir):
     # --- Filter Specifications ---
     fs = 20000   # Sampling rate (Hz)
     fc = 300     # High-pass cutoff frequency (Hz)
@@ -74,9 +74,10 @@ def main():
     # --- 1. Set your directory ---
     #
     offline_dir = "/data/results/mS51_res/flows_final_shift/batch32768/offline_3600"
+    online_dir = "/data/results/mS51_res/flows_final_shift/batch32768/online_3600"
     result_dir = "/home/mariandawud/kilosort/ms51"
     # --- 2. Load Wall (Templates) ---
-    Wall_np = np.load(os.path.join(offline_dir, "Wall_Normalized.npy"))
+    Wall_np = np.load(os.path.join(online_dir, "Wall_Normalized.npy"))
     Wall_h = os.path.join(result_dir, "Wall_Normal.h")
     write_c_float_header(Wall_np, "Wall_Normal", Wall_h)
 
