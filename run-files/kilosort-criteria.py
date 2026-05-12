@@ -74,10 +74,10 @@ def compute_isi_index_paper(spike_times_samples, fs, isi1_ms=2.0, isi2_ms=20.0):
         return np.nan
     return float(n_0_2 / expected_0_2)
 
-def compute_l_ratio(cluster_id, clu, X_all, p, max_in, max_other):
+def compute_l_ratio(template_id, temp, X_all, p, max_in, max_other):
     """Classic L-ratio using PCA coefficients."""
-    cid = int(cluster_id)
-    in_idx = np.flatnonzero(clu == cid)
+    tid = int(template_id)
+    in_idx = np.flatnonzero(temp == tid)
     n_in_total = int(in_idx.size)
     
     if n_in_total < 20:
@@ -91,7 +91,7 @@ def compute_l_ratio(cluster_id, clu, X_all, p, max_in, max_other):
 
     mu, inv_cov = stable_inv_cov(X_in)
 
-    out_idx = np.flatnonzero(clu != cid)
+    out_idx = np.flatnonzero(temp != tid)
     if out_idx.size == 0:
         return 0.0
     
@@ -103,11 +103,11 @@ def compute_l_ratio(cluster_id, clu, X_all, p, max_in, max_other):
 
     return float(np.sum(tail) / max(n_in_total, 1))
 
-def compute_template_p2t(cluster_id, templates):
+def compute_template_p2t(template_id, templates):
     """Template peak-to-trough on best channel in template units."""
     if templates is None:
         return np.nan
-    k = int(cluster_id)
+    k = int(template_id)
     if k < 0 or k >= templates.shape[0]:
         return np.nan
     
@@ -120,30 +120,72 @@ def compute_template_p2t(cluster_id, templates):
 # --- FILTERING ---
 # ==========================================
 
-def filter_by_popularity(clu, cluster_ids):
-    """Prints spike counts per cluster (sorted by count) and filters based on user input threshold."""
-    # Count spikes for each cluster
-    counts = {cid: np.sum(clu == cid) for cid in cluster_ids}
+def filter_by_popularity(tpl_assign, template_ids, duration_s):
+    """Calculates spikes per hour, draws CDF, prints stats, and asks for threshold."""
     
-    # Sort the dictionary by spike count in descending order
-    sorted_counts = dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
+    # --- Convert recording duration to hours ---
+    duration_h = duration_s / 3600.0
+    if duration_h <= 0:
+        print("[WARN] Invalid duration. Skipping popularity filter.")
+        return template_ids, 0
     
-    print("\n--- Cluster Popularity (Spike Counts) ---")
-    for cid, count in sorted_counts.items():
-        print(f"Cluster {cid:4d}: {count:6d} spikes")
+    # Calculate frequency in Spikes per Hour for each template
+    counts = {tid: np.sum(tpl_assign == tid) for tid in template_ids}
+    freqs = {tid: count / duration_h for tid, count in counts.items()}
     
+    # Extract just the frequency values for math
+    freq_array = np.array(list(freqs.values()))
+    
+    if len(freq_array) == 0:
+        return [], 0
+
+    # Calculate requested statistics
+    min_f = np.min(freq_array)
+    max_f = np.max(freq_array)
+    p1 = np.percentile(freq_array, 1)
+    p99 = np.percentile(freq_array, 99)
+    
+    print("\n--- Popularity Statistics (Spikes per Hour) ---")
+    print(f"Minimum:         {min_f:.2f} spikes/hr")
+    print(f"1st Percentile:  {p1:.2f} spikes/hr")
+    print(f"99th Percentile: {p99:.2f} spikes/hr")
+    print(f"Maximum:         {max_f:.2f} spikes/hr")
+    
+    # --- Plot the CDF ---
+    sorted_freqs = np.sort(freq_array)
+    # y-axis is the cumulative probability (from 0 to 1)
+    cdf = np.arange(1, len(sorted_freqs) + 1) / len(sorted_freqs)
+    
+    plt.figure(figsize=(8, 5))
+    plt.plot(sorted_freqs, cdf, lw=2, label='CDF')
+    plt.axvline(p1, color='red', linestyle='--', label=f'1% ({p1:.1f}/hr)')
+    plt.axvline(p99, color='green', linestyle='--', label=f'99% ({p99:.1f}/hr)')
+    
+    plt.xlabel("Spikes per Hour")
+    plt.ylabel("Cumulative Probability")
+    plt.title("CDF of Template Appearances per Hour")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Show plot without blocking the terminal prompt
+    plt.show(block=False)
+    plt.pause(0.1) 
+    
+    # --- Get User Input ---
     try:
-        threshold_str = input("\nEnter minimum spike count threshold to keep a cluster (or press Enter for 0): ")
-        threshold = int(threshold_str) if threshold_str.strip() else 0
+        threshold_str = input("\nEnter minimum Spikes per Hour threshold (or press Enter for 0): ")
+        threshold = float(threshold_str) if threshold_str.strip() else 0.0
     except ValueError:
-        print("Invalid input. Defaulting to 0.")
-        threshold = 0
+        print("Invalid input. Defaulting to 0.0 spikes/hr.")
+        threshold = 0.0
         
-    # Keep clusters that meet the threshold
-    kept_clusters = [cid for cid, count in sorted_counts.items() if count >= threshold]
-    eliminated = len(cluster_ids) - len(kept_clusters)
+    plt.close() # Close the graph window after user presses enter
+        
+    # Apply filter based on spikes per hour
+    kept_templates = [tid for tid, f in freqs.items() if f >= threshold]
+    eliminated = len(template_ids) - len(kept_templates)
     
-    return kept_clusters, eliminated
+    return kept_templates, eliminated
 
 # ==========================================
 # --- MAIN EXECUTION ---
@@ -153,8 +195,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ks_dir", required=True, help="Kilosort output folder")
     ap.add_argument("--out", required=True, help="Output TSV path")
-    ap.add_argument("--max_other", type=int, default=30000, help="Max non-cluster spikes for L-ratio")
-    ap.add_argument("--max_in", type=int, default=5000, help="Max in-cluster spikes for covariance")
+    ap.add_argument("--fs", type=float, default=20000.0, help="Sampling rate (fallback if ops.npy is missing)") # <--- NEW
+    ap.add_argument("--max_other", type=int, default=30000, help="Max non-template spikes for L-ratio")
+    ap.add_argument("--max_in", type=int, default=5000, help="Max in-template spikes for covariance")
     ap.add_argument("--isi_thresh", type=float, default=0.2, help="ISI-index threshold (pass if <)")
     ap.add_argument("--lratio_thresh", type=float, default=0.05, help="L-ratio threshold (pass if <)")
     ap.add_argument("--p2t_thresh", type=float, default=50.0, help="Template p2t threshold (0 disables)")
@@ -167,7 +210,8 @@ def main():
     # --- 1. Load Data ---
     print("Loading data...")
     st = np.load(ks_dir / "spike_times.npy").astype(np.int64).reshape(-1)
-    clu = np.load(ks_dir / "spike_clusters.npy").astype(np.int64).reshape(-1)
+   
+    tpl_assign = np.load(ks_dir / "spike_templates.npy").astype(np.int64).reshape(-1)
 
     ops_path = ks_dir / "ops.npy"
     if ops_path.exists():
@@ -190,46 +234,49 @@ def main():
     p = int(X_all.shape[1])
 
     duration_s = float(st.max()) / fs if st.size else np.nan
-    all_cluster_ids = np.unique(clu)
-    initial_cluster_count = len(all_cluster_ids)
+    
+    # Get unique template IDs
+    duration_s = float(st.max()) / fs if st.size else np.nan
+    all_template_ids = np.unique(tpl_assign)
+    initial_template_count = len(all_template_ids)
 
     # --- 2. Interactive Popularity Filtering ---
-    print(f"\nInitial total clusters found: {initial_cluster_count}")
-    filtered_cluster_ids, eliminated_by_popularity = filter_by_popularity(clu, all_cluster_ids)
-
+    print(f"\nInitial total templates found: {initial_template_count}")
+    filtered_template_ids, eliminated_by_popularity = filter_by_popularity(tpl_assign, all_template_ids, duration_s)
     # --- 3. Compute Metrics & Write Output ---
     print("\nComputing QC metrics...")
+    
+    # Change header from template_id to template_id
     header = [
-        "cluster_id", "n_spikes", "duration_s", "firing_rate_hz",
+        "template_id", "n_spikes", "duration_s", "firing_rate_hz",
         "isi_index", "isi_pass", "l_ratio", "l_pass",
         "template_p2t_units", "p2t_pass",
     ]
     lines = ["\t".join(header)]
 
-    # Trackers for the stats funnel
     funnel_stats = {
-        "passed_popularity": len(filtered_cluster_ids),
+        "passed_popularity": len(filtered_template_ids),
         "failed_isi": 0,
         "failed_lratio": 0,
         "failed_p2t": 0,
         "passed_all_qc": 0
     }
 
-    for cid in filtered_cluster_ids:
-        idx = np.flatnonzero(clu == cid)
+    for tid in filtered_template_ids:
+        # Evaluate based on template assignment
+        idx = np.flatnonzero(tpl_assign == tid)
         n_spikes = int(idx.size)
         fr = (n_spikes / duration_s) if (np.isfinite(duration_s) and duration_s > 0) else np.nan
 
         isi = compute_isi_index_paper(st[idx], fs=fs)
         isi_pass = int(np.isfinite(isi) and (isi < args.isi_thresh))
 
-        lr = compute_l_ratio(cid, clu, X_all, p, args.max_in, args.max_other)
+        lr = compute_l_ratio(tid, tpl_assign, X_all, p, args.max_in, args.max_other)
         l_pass = int(np.isfinite(lr) and (lr < args.lratio_thresh))
 
-        p2t = compute_template_p2t(cid, templates)
+        p2t = compute_template_p2t(tid, templates)
         p2t_pass = int(np.isfinite(p2t) and (p2t >= args.p2t_thresh)) if args.p2t_thresh > 0 else -1
 
-        # Funnel logic tracking
         passed_all = True
         if not isi_pass:
             funnel_stats["failed_isi"] += 1
@@ -245,7 +292,7 @@ def main():
             funnel_stats["passed_all_qc"] += 1
 
         lines.append(
-            f"{int(cid)}\t{n_spikes}\t{duration_s:.6f}\t{fr:.6f}\t"
+            f"{int(tid)}\t{n_spikes}\t{duration_s:.6f}\t{fr:.6f}\t"
             f"{isi if np.isfinite(isi) else 'nan'}\t{isi_pass}\t"
             f"{lr if np.isfinite(lr) else 'nan'}\t{l_pass}\t"
             f"{p2t if np.isfinite(p2t) else 'nan'}\t{p2t_pass}"
@@ -257,7 +304,7 @@ def main():
     print("\n=========================================")
     print("        FILTERING & QC STATISTICS        ")
     print("=========================================")
-    print(f"Total Initial Clusters:       {initial_cluster_count}")
+    print(f"Total Initial Templates:      {initial_template_count}")
     print(f"1. Popularity Filter:       - {eliminated_by_popularity} eliminated")
     print(f"   Remaining:                 {funnel_stats['passed_popularity']}")
     print(f"2. ISI-Index (<{args.isi_thresh}):      - {funnel_stats['failed_isi']} failed")
@@ -267,10 +314,9 @@ def main():
     else:
         print(f"4. Template P2T:              Disabled")
     print("-----------------------------------------")
-    print(f"Clusters passing ALL steps:   {funnel_stats['passed_all_qc']}")
+    print(f"Templates passing ALL steps:  {funnel_stats['passed_all_qc']}")
     print("=========================================\n")
     print(f"Saved TSV: {out_path}")
-
 
 if __name__ == "__main__":
     main()
