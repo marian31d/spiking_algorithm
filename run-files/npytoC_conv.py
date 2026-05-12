@@ -28,30 +28,6 @@ def write_c_float_header(array_data, array_name, filename):
         
     print(f"Generated {filename} ({len(flat_data)} elements as floats)")
 
-# --- Filter Generation Logic ---
-def generate_unscaled_fir_taps(fs=20000, cutoff=300, num_taps=71):
-    """Generates the exact unscaled time-domain impulse response."""
-    NT = 30122
-    
-    # 1. Kilosort's exact Butterworth definition
-    b, a = butter(3, cutoff, fs=fs, btype='high')
-    x = np.zeros(NT)
-    x[NT//2] = 1
-    
-    # 2. Get the massive symmetrical filter
-    hp_filter = filtfilt(b, a, x).copy()
-    
-    # 3. Automatically find the center peak of the impulse response
-    center = np.argmax(np.abs(hp_filter))
-    
-    # 4. Slice out only the core taps needed for the SoC
-    half_taps = num_taps // 2
-    core_filter = hp_filter[center - half_taps : center + half_taps + 1]
-    
-    # Return raw floats (NO scaling)
-    return core_filter
-
-
 # --- Main Execution ---
 
 def main():
