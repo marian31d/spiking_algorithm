@@ -258,8 +258,8 @@ void save_npy(const char* filename, void* data, size_t num_elements, size_t elem
 
 int main() {
 
-    char filename[] = "/data/mDs2/.../mds2.dat"; // Edit this path to the actual binary file location
-    char results_dir[] = "/data/results/mds2_results/flows_c";
+    char filename[] = "/data/mS51/dat/mS51_49/mS51_49.dat";
+    char results_dir[] = "/data/results/mS51_results/flows_c";
     uint64_t binary_size = get_file_size_posix(filename);
 
     printf("Reading data from %s...\n", filename);
