@@ -106,7 +106,7 @@ def main():
         if isinstance(Wsh, torch.Tensor):
             Wsh = Wsh.detach().cpu().numpy()
         Wsh_h = os.path.join(result_dir, "Wsh.h")
-        write_c_float_header(Wsh, "Wsh_array", Wsh_h)
+        write_c_float_header(Wsh, "Wsh", Wsh_h)
     else:
         print("Wsh not found in directory.")
     # --- 7. Get IIR filter weights 
