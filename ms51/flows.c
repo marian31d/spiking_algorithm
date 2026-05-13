@@ -283,7 +283,7 @@ int main() {
         if (i < nt) {continue;}
         int m_ret = template_match(&sample, spike_results, &num_spikes, 1, i);
         if (i % 100000 == 0) {
-            printf("Processed %u batches...\n", i);
+            printf("Processed %u batches...\n out of %u", i, (uint32_t)(binary_size / (NCHAN_BIN * sizeof(int16_t))));
         }
     }
     fclose(fptr);
