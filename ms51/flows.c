@@ -75,13 +75,11 @@ int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
     }
     //handle an incomplete batch at the end of the file by padding with the last valid sample for each channel
     else {
-        printf("Partial batch detected at index: %d. Padding the rest...\n", i);
         // SAFETY CHECK: Did the file end before even giving us 1 full time step?
         if (i == 0) {
-            printf("Error reading first batch, number of channels is: %d.\n", samples_read);
+            printf("Error reading first batch, number of channels is: %ld.\n", samples_read);
             return 1; 
         }
-        printf("Padding batch from time step %d to %d...\n", i, RB);
         // 3. The Padding Loop
         for (int c = 0; c < NCHAN; c++) {
             // we pad the current timestep if it's missing less than NCHAN channels
@@ -115,7 +113,6 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
             temp[h][c] = sample->raw_data[h][c];
         }
     }
-    printf("First data padded succesfuly\n");
 
     //Filter each sample
     for (int c = 0; c < NCHAN; c++){    //channel loop
@@ -125,7 +122,6 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
             (iir_weights[3] * sample->raw_data[h1][c]) - 
             (iir_weights[4] * sample->raw_data[h2][c]));
     }
-    printf("Sample filtered\n");
 
     //multiply by Wsh for drift correction and whitening
     for (int w = 0; w < NCHAN; w++) {
@@ -133,11 +129,10 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
         // and preserve decimal precision from the Wsh matrix
         float sum = 0; 
         for (int c = 0; c < NCHAN; c++) {
-            sum += (float)sample->raw_data[h][c] * Wsh[c][w]; 
+            sum += (float)sample->raw_data[h][c] * Wsh[w * NCHAN + c];
         }
         sample->raw_data[h][w] = sum;
     }
-    printf("Applied drift correction and whitening\n");
     return(0);
 }
 
@@ -152,7 +147,7 @@ static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, flo
             float score = 0;
             #pragma GCC unroll 61 // Tells GCC compiler to obliterate the loop
             for(int s = 0; s < nt; s++){
-                score += sample->raw_data[(time_idx - s) & RING_MASK][c] * wPCA[p][s];
+                score += sample->raw_data[(time_idx - s) & RING_MASK][c] * wPCA[p * NPCS + s];
             }
             pc_scores[c][p] = score;
         }
@@ -164,7 +159,7 @@ static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, flo
         float c_score = 0.0f;
         for(int c = 0; c < NCHAN; c++){
             for(int p = 0; p < NPCS; p++){
-                c_score += pc_scores[c][p] * Wall_Normal[t][c][p];
+                c_score += pc_scores[c][p] * Wall_Normal[t * NCLU + c * NCHAN + p];
             }
         }
         if (c_score > *out_max_score){
@@ -196,12 +191,12 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         for(int c = 0; c < NCHAN; c++){
             float scaled_wall[NPCS];
             for(int p = 0; p < NPCS; p++){
-                scaled_wall[p] = max_score * Wall_Normal[best_t_id][c][p];
+                scaled_wall[p] = max_score * Wall_Normal[best_t_id * NCLU + c * NCHAN + p];
             }
             for(int s = (nt - 1); s >=0; s--){
                 float reconstructed_voltage = 0.0f;
                 for(int p = 0; p < NPCS; p++){
-                    reconstructed_voltage += scaled_wall[p] * wPCA[p][s];
+                    reconstructed_voltage += scaled_wall[p] * wPCA[p * NPCS + s];
                 }
                 // Erase from target_b
                 sample->raw_data[(sample->head - s) & RING_MASK][c] -= (int16_t)reconstructed_voltage;
@@ -287,6 +282,9 @@ int main() {
         }
         if (i < nt) {continue;}
         int m_ret = template_match(&sample, spike_results, &num_spikes, 1, i);
+        if (i % 100000 == 0) {
+            printf("Processed %u batches...\n", i);
+        }
     }
     fclose(fptr);
     // ---------- END OF BATCH PROCESSING LOOP ----------
