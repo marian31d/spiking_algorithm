@@ -20,7 +20,7 @@
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
 #define TH 8    //check if it's constant
-#define MAX_SPIKES 10000      //ask Eran about this
+#define MAX_SPIKES 1000000      //ask Eran about this
 #define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 
 /*
@@ -254,7 +254,7 @@ void save_npy(const char* filename, void* data, size_t num_elements, size_t elem
 int main() {
 
     char filename[] = "/data/mS51/dat/mS51_49/mS51_49.dat";
-    char results_dir[] = "/data/results/mS51_results/flows_c";
+    char results_dir[] = "/data/results/mS51_res/flows_c";
     uint64_t binary_size = get_file_size_posix(filename);
 
     printf("Reading data from %s...\n", filename);
