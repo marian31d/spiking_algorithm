@@ -20,7 +20,6 @@
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
 #define TH 8    //check if it's constant
-#define MAX_SPIKES 1000000      //ask Eran about this
 #define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 
 /*
@@ -45,7 +44,6 @@ typedef struct {
 
 static SampleBuffer sample;
 static int16_t temp[RB][NCHAN]; //temporary array for storing padded batch 
-static SpikeEvent spike_results[MAX_SPIKES];
 static uint32_t num_spikes = 0;
 
 // Function to get the file size using POSIX stat
@@ -106,7 +104,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
         }
         else if (i == 1){
             temp[h][c] = sample->raw_data[h][c];
-            temp[(h + 62) & RING_MASK][c] = sample->raw_data[h1][c];
+            temp[h2][c] = sample->raw_data[h1][c];
             sample->raw_data[h2][c] = sample->raw_data[h1][c];
         } 
         else{
@@ -169,7 +167,7 @@ static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, flo
     }
 }
 
-int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *spike_count, int match, uint32_t i){
+int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *spike_count,uint32_t *batch_size, int match, uint32_t i){
     // 1-Sample Delay variables to find the physical peak
     float max_score;
     int best_t_id;
@@ -181,7 +179,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
     // If the PREVIOUS microsecond was above threshold AND was higher than the current...
     for(int iter = 0; iter < MAX_PEELS; iter++) {
         // 1. Record the Spike
-        if(*spike_count < MAX_SPIKES){
+        if(*spike_count < 2*(*batch_size)){
             spike_results[*spike_count].absolute_time = i;
             spike_results[*spike_count].template_id = best_t_id;
             spike_results[*spike_count].score = max_score;
@@ -264,10 +262,13 @@ int main() {
         fprintf(stderr, "Error opening binary file");
         return -1; // Return error batch
     }
-
+    
     sample.head = 0;
     num_spikes = 0;
     memset(&sample.raw_data, 0, sizeof(sample.raw_data));
+    uint32_t batch_size = binary_size /(NCHAN_BIN * sizeof(int16_t));
+    SpikeEvent *spike_results;
+    spike_results = malloc(2 * batch_size * sizeof(SpikeEvent));
 
     for (uint32_t i = 0; i < binary_size /(NCHAN_BIN * sizeof(int16_t)); i++) {
         int r_ret = dma_read_block(fptr, i, &sample);
@@ -281,7 +282,7 @@ int main() {
             break;
         }
         if (i < nt) {continue;}
-        int m_ret = template_match(&sample, spike_results, &num_spikes, 1, i);
+        int m_ret = template_match(&sample, spike_results, &num_spikes, &batch_size, 1, i);
         if (i % 100000 == 0) {
             printf("Processed %u batches...\n out of %u", i, (uint32_t)(binary_size / (NCHAN_BIN * sizeof(int16_t))));
         }
