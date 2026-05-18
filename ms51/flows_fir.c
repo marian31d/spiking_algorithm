@@ -14,7 +14,7 @@
 #define NCHAN 126
 #define FS 20000
 #define nt 61
-#define RB 64       //ring buffer length
+#define RB 128       //ring buffer length
 #define RING_MASK (RB - 1)
 #define FB 71       //0.5 * filter buffer size 
 #define NPCS 3
@@ -120,13 +120,12 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
     }
 
     // 1. Filter each sample
-    for (int c = 0; c < NCHAN; c++){    
+    for (int c = 0; c < NCHAN; c++){   
+        float filtered_val = 0; 
         for(int f = 0; f < 71; f++){
-        sample->raw_data[h][c] = ((iir_weights[0] * temp[h][c]) + 
-            (iir_weights[1] * temp[h1][c]) + 
-            (iir_weights[2] * temp[h2][c]) - 
-            (iir_weights[3] * sample->raw_data[h1][c]) - 
-            (iir_weights[4] * sample->raw_data[h2][c]));
+            filtered_val += fir_weights[0] * temp[h][c];
+        }
+        sample->raw_data[h][c] = filtered_val;
     }
 
     // 2. Apply CAR (Common Average Referencing)
