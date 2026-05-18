@@ -393,11 +393,11 @@ def online_flow(bin_path: Path, probe_path: Path,
     norms[norms == 0] = 1.0 # Prevent divide-by-zero on empty clusters
 
     # 3. Divide Wall by the norm to shrink templates to exactly 1.0
-    Wall_Normalized = Wall / norms
+    Wall_normalized = Wall / norms
 
     # 4. Save for the C compiler!
-    np.save(out_dir / "Wall_Normalized.npy", Wall_Normalized.detach().cpu().numpy())
-    logger.info(f"[ONLINE] Exported purely mathematical unit-shapes: Wall_Normalized.npy")
+    np.save(out_dir / "Wall.npy", Wall.detach().cpu().numpy())
+    logger.info(f"[ONLINE] Exported purely mathematical unit-shapes: Wall.npy")
 
     # ======================================================
     n_pcs = int(ops["settings"]["n_pcs"])
@@ -408,8 +408,8 @@ def online_flow(bin_path: Path, probe_path: Path,
     else:
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
       
-    np.save(out_dir / "Wall_permuted.npy", Wall_match.detach().cpu().numpy())
-    logger.info("[ONLINE] Exported properly aligned Wall_permuted.npy for C hardware.")
+    np.save(out_dir / "Wall_normalized.npy", Wall_normalized.detach().cpu().numpy())
+    logger.info("[ONLINE] Exported properly aligned Wall_normalized.npy for C hardware.")
     # ----------------------------------------
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     # Core SoC simulation: Template Matching
