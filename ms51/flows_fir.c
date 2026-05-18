@@ -189,12 +189,12 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
     // 1. Calculate the score for the current microsecond
     get_max_score_at_time(sample, i, &current_cf, &current_dot, &current_t_id);
 
-    printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
+    //printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
 
     // --- PEAK DETECTION & PEELING PHASE ---
     // Wait until the score drops. If prev_max_score is higher than current_score, the peak was exactly 1 sample ago!
     if (prev_max_cf > TH_LEARNED_SQ && prev_max_cf > current_cf) {
-        printf("Peak detected at time index %u with score %f (Template %d)\n", i - 1, prev_max_cf, prev_best_t_id);
+        //printf("Peak detected at time index %u with score %f (Template %d)\n", i - 1, prev_max_cf, prev_best_t_id);
         // We lock onto the peak from 1 sample ago!
         float peak_cf   = prev_max_cf;
         float peak_dot  = prev_max_dot;
