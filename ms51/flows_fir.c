@@ -7,7 +7,7 @@
 // Include array hearder files for configuration 
 #include "Wall_Normal.h"
 #include "Wsh.h"
-#include "iir_weights.h"
+#include "fir_weights.h"
 #include "wPCA.h"
 
 #define NCHAN_BIN 135
@@ -121,6 +121,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
 
     // 1. Filter each sample
     for (int c = 0; c < NCHAN; c++){    
+        for(int f = 0; f < 71; f++){
         sample->raw_data[h][c] = ((iir_weights[0] * temp[h][c]) + 
             (iir_weights[1] * temp[h1][c]) + 
             (iir_weights[2] * temp[h2][c]) - 
