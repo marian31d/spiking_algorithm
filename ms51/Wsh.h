@@ -1,5 +1,5 @@
-#ifndef WSH_ARRAY_H
-#define WSH_ARRAY_H
+#ifndef WSH_H
+#define WSH_H
 
 const float Wsh[15876] = {
 0.013439f, -0.001102f, -0.000921f, -0.000534f, -0.000370f, -0.000167f, -0.000094f, 0.000056f, 0.000024f, 0.000006f, 
@@ -1592,4 +1592,4 @@ const float Wsh[15876] = {
 -0.000198f, -0.000444f, -0.000392f, -0.000973f, -0.000800f, 0.013328f, 
 };
 
-#endif // WSH_ARRAY_H
+#endif // WSH_H
