@@ -298,7 +298,6 @@
 
         char filename[] = "/data/mS51/dat/mS51_49/mS51_49.dat";
         char results_dir[] = "/data/results/mS51_res/flows_c";
-        uint64_t binary_size = get_file_size_posix(filename);
 
         printf("Reading data from %s...\n", filename);
         FILE *fptr = fopen(filename, "rb");
@@ -315,8 +314,8 @@
         memset(temp, 0, sizeof(temp));
         memset(&sample.raw_data, 0, sizeof(sample.raw_data));
 
-        uint32_t    batch_size = (uint32_t)total_samples;
-        SpikeEvent *spike_results = malloc(2 * batch_size * sizeof(SpikeEvent));
+        uint32_t    binary_size = (uint32_t)total_samples;
+        SpikeEvent *spike_results = malloc(2 * binary_size * sizeof(SpikeEvent));
         if (!spike_results) { fprintf(stderr, "malloc failed\n"); return -1; } 
         for (uint32_t i = 72000000; i < 72001000; i++) {
             int r_ret = dma_read_block(fptr, i, &sample);
@@ -330,7 +329,7 @@
                 break;
             }
             if (i < (nt - 1)) {continue;}
-            int m_ret = template_match(&sample, spike_results, &num_spikes, &batch_size, 1, i);
+            int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, i);
             if (i % 100000 == 0) {
                 printf("Processed %u batches... out of %u\n", i, (uint32_t)(binary_size / (NCHAN_BIN * sizeof(int16_t))));
             }
