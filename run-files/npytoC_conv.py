@@ -77,20 +77,29 @@ def main():
     online_dir = "/data/results/mS51_res/flows_final_shift/batch32768/online_3600"
     result_dir = "/home/mariandawud/kilosort/ms51"
     # --- 2. Load Wall (Templates) ---
-    Wall_np = np.load(os.path.join(online_dir, "Wall_Normalized.npy"))
-    Wall_h = os.path.join(result_dir, "Wall_Normal.h")
-    write_c_float_header(Wall_np, "Wall_Normal", Wall_h)
+    Wall_np = np.load(os.path.join(online_dir, "Wall.npy"))
+    Wall_h = os.path.join(result_dir, "Wall.h")
+    write_c_float_header(Wall_np, "Wall", Wall_h)
 
-    # --- 3. Load 'wPCA' (PC templates) ---
+    # --- 3. Export nm[] — one scalar per template ---
+    nm = (Wall_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
+    nm_h = os.path.join(result_dir, "Wall_nm.h")
+    write_c_float_header(nm, "Wall_nm", nm_h)
+
+    # --- 4. Export Th_learned (detection threshold) ---
+    Th_learned = float(ops.get("Th_learned", 8.0))
+    print(f"Th_learned = {Th_learned}  (compare scores against {Th_learned**2:.2f} in C)")
+    
+    # --- 5. Load 'wPCA' (PC templates) ---
     WPCA_np = np.load(os.path.join(offline_dir, "wPCA.npy"))
     WPCA_h = os.path.join(result_dir, "wPCA.h")
     write_c_float_header(WPCA_np, "wPCA", WPCA_h)
 
-    # --- 4. Load Ops ---
+    # --- 6. Load Ops ---
     ops_path = os.path.join(offline_dir, "ops.npy")
     ops = np.load(ops_path, allow_pickle=True).item()
 
-    # --- 5. Extract and Write Wrot (Whitening Matrix) ---
+    # --- 7. Extract and Write Wrot (Whitening Matrix) ---
     Wrot = ops.get("Wrot", None)
     if Wrot is not None:
         if isinstance(Wrot, torch.Tensor):
@@ -100,7 +109,7 @@ def main():
     else:
         print("Wrot not found in ops.")
 
-    # --- 6. Extract and Write Mul (Drift Shift * whitening) ---
+    # --- 8. Extract and Write Mul (Drift Shift * whitening) ---
     Wsh = np.load(os.path.join(offline_dir, "Wsh.npy"))
     if Wsh is not None:
         if isinstance(Wsh, torch.Tensor):
@@ -109,7 +118,8 @@ def main():
         write_c_float_header(Wsh, "Wsh", Wsh_h)
     else:
         print("Wsh not found in directory.")
-    # --- 7. Get IIR filter weights 
+    
+    # --- 9. Get IIR filter weights 
     get_iir_weights(result_dir)
 
 if __name__ == "__main__":
