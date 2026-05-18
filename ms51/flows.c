@@ -5,10 +5,14 @@
 #include <stdlib.h>
 
 // Include array hearder files for configuration 
-#include "Wall_Normal.h"
+#include "Wall.h"
+#include "Wall_nm.h" 
 #include "Wsh.h"
 #include "iir_weights.h"
 #include "wPCA.h"
+
+#define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
+
 
 #define NCHAN_BIN 135
 #define NCHAN 126
@@ -19,8 +23,8 @@
 #define FB 71       //0.5 * filter buffer size 
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
-#define TH 4    //check if it's constant
-#define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
+#define TH_LEARNED_SQ 64.00    //check if it's constant
+#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -46,19 +50,10 @@ static SampleBuffer sample;
 static float temp[RB][NCHAN]; //temporary array for storing padded batch 
 static uint32_t num_spikes = 0;
 
-static float prev_max_score = 0.0f;
-static int prev_best_t_id = -1;
-static uint32_t refractory_lockout = 0;
+static float prev_max_cf    = 0.0f;   // Cf = relu(dot)^2 / nm  (for threshold)
+static float prev_max_dot   = 0.0f;   // raw dot product         (for amp = dot/nm)
+static int   prev_best_t_id = -1;
 
-// Function to get the file size using POSIX stat
-uint64_t get_file_size_posix(const char *filename) {
-    // Use stat to get the file size
-    struct stat st;
-    if (stat(filename, &st) == 0) {
-        return (uint64_t)st.st_size; // st_size is of type off_t
-    }
-    return -1;
-}
 
 // Function to read batchs of binary data from the file (to be changed to read the data from other source)
 int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
@@ -154,7 +149,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
 }
 
 // static inline suggests the compiler inline the assembly to avoid call overhead
-static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, float *out_max_score, int *out_best_t_id) {
+static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, float *out_max_cf, float *out_max_dot, int *out_best_t_id) {
     float pc_scores[NCHAN][NPCS]; 
     //raw_data[61][128] || wPCA[3][61] 
     //we calculate the temporal scores and eleminate the temporal dimension
@@ -170,100 +165,98 @@ static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, flo
         }
     }
     // 2. Spatial Collapse & Winner Selection
-    *out_max_score = 0.0f;
+    *out_max_cf    = 0.0f;
+    *out_max_dot   = 0.0f;
     *out_best_t_id = -1;
     for(int t = 0; t < NCLU; t++){
-        float c_score = 0.0f;
-        for(int c = 0; c < NCHAN; c++){
-            for(int p = 0; p < NPCS; p++){
-                c_score += pc_scores[c][p] * Wall_Normal[t * (NCHAN * NPCS) + c * NPCS + p];
+            float dot = 0.0f;
+            for(int c = 0; c < NCHAN; c++){
+                for(int p = 0; p < NPCS; p++){
+                    dot += pc_scores[c][p] * Wall[t * (NCHAN * NPCS) + c * NPCS + p];
+                }
+            }
+            
+            // Kilosort: Cf = relu(B)^2 / nm
+            float cf = (RELU(dot) * RELU(dot)) / Wall_nm[t];
+
+            if (cf > *out_max_cf) {
+                *out_max_cf    = cf;
+                *out_max_dot   = dot;
+                *out_best_t_id = t;
             }
         }
-        if (c_score > *out_max_score){
-            *out_max_score = c_score;
-            *out_best_t_id = t;
-        }
-    }
 }
 
 int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *spike_count, uint32_t *batch_size, int match, uint32_t i){
-    float current_score;
-    int current_t_id;
+        float current_cf, current_dot;
+        int   current_t_id;
 
-    // --- SCANNING PHASE ---
-    // 1. Calculate the score for the current microsecond
-    get_max_score_at_time(sample, i, &current_score, &current_t_id);
+        // --- SCANNING PHASE ---
+        // 1. Calculate the score for the current microsecond
+        get_max_score_at_time(sample, i, &current_cf, &current_dot, &current_t_id);
 
-    // Ignore the data until the subtraction ripples decay
-    if (refractory_lockout > 0) {
-        refractory_lockout--;
-        prev_max_score = 0.0f; // Blind the peak detector
-        return 0;
-    }
-    
-    printf("Time index %u | Max Score: %f (Template %d)\n", i, current_score, current_t_id);
+        printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
 
-    // --- PEAK DETECTION & PEELING PHASE ---
-    // Wait until the score drops. If prev_max_score is higher than current_score, the peak was exactly 1 sample ago!
-    if (prev_max_score > TH && prev_max_score > current_score) {
-        printf("Peak detected at time index %u with score %f (Template %d)\n", i - 1, prev_max_score, prev_best_t_id);
-        // We lock onto the peak from 1 sample ago!
-        float max_score = prev_max_score;
-        int best_t_id = prev_best_t_id;
-        
-        uint32_t peak_head = (sample->head - 1) & RING_MASK; // The head position at the peak
-        // The peak of the Kilosort template is at index 20. 
-        // The current head is at index 60. Therefore, the peak happened 40 samples ago
-        uint32_t peak_time = 0;
-        if (i >= 40) {
-            peak_time = i - 40; 
-        }
-        // --- YOUR ORIGINAL PEELING LOOP ---
-        for(int iter = 0; iter < MAX_PEELS; iter++) {
+        // --- PEAK DETECTION & PEELING PHASE ---
+        // Wait until the score drops. If prev_max_score is higher than current_score, the peak was exactly 1 sample ago!
+        if (prev_max_cf > TH_LEARNED_SQ && prev_max_cf > current_cf) {
+            printf("Peak detected at time index %u with score %f (Template %d)\n", i - 1, prev_max_cf, prev_best_t_id);
+            // We lock onto the peak from 1 sample ago!
+            float peak_cf   = prev_max_cf;
+            float peak_dot  = prev_max_dot;
+            int   best_t_id = prev_best_t_id;
             
-            // 1. Record the Spike (using the peak time)
-            if(*spike_count < 2*(*batch_size)){
-                spike_results[*spike_count].absolute_time = peak_time;
-                spike_results[*spike_count].template_id = best_t_id;
-                spike_results[*spike_count].score = max_score;
-                (*spike_count)++;
+            uint32_t peak_head = (sample->head - 1) & RING_MASK; // The head position at the peak
+            // The peak of the Kilosort template is at index 20. 
+            // The current head is at index 60. Therefore, the peak happened 40 samples ago
+            uint32_t peak_time = 0;
+            if (i >= 40) {
+                peak_time = i - 40; 
             }
-            
-            // 2. Reconstruct and Subtract (Erase the spike)
-            for(int c = 0; c < NCHAN; c++){
-                float scaled_wall[NPCS];
-                for(int p = 0; p < NPCS; p++){
-                    scaled_wall[p] = max_score * Wall_Normal[best_t_id * (NCHAN * NPCS) + c * NPCS + p];
+            // --- YOUR ORIGINAL PEELING LOOP ---
+            for(int iter = 0; iter < MAX_PEELS; iter++) {
+                
+                // 1. Record the Spike (using the peak time)
+                if(*spike_count < 2*(*batch_size)){
+                    spike_results[*spike_count].absolute_time = peak_time;
+                    spike_results[*spike_count].template_id = best_t_id;
+                    spike_results[*spike_count].score = peak_dot / Wall_nm[best_t_id];;
+                    (*spike_count)++;
                 }
-                for(int s = (nt - 1); s >=0; s--){
-                    float reconstructed_voltage = 0.0f;
-                    for(int p = 0; p < NPCS; p++){
-                        reconstructed_voltage += scaled_wall[p] * wPCA[p * nt + s];
+                
+                // 2. Reconstruct and Subtract (Erase the spike)
+                float amp = peak_dot / Wall_nm[best_t_id];
+                for (int c = 0; c < NCHAN; c++) {
+                    for (int ts = 0; ts < nt; ts++) {
+                        float reconstructed = 0.0f;
+                        for (int p = 0; p < NPCS; p++)
+                            reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]
+                                            * wPCA[p*nt + ts];
+                        reconstructed *= amp;
+                        sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] -= reconstructed;
                     }
-                    
-                    // Erase from target_b (using peak_head)
-                    sample->raw_data[(peak_head - (nt - 1 - s)) & RING_MASK][c] -= reconstructed_voltage;
                 }
-            }
-            
-            // 3. Recalculate to see if another spike was hiding underneath!
-            // NOTE: We must rescan at the PEAK time, not the current time
-            get_max_score_at_time(sample, peak_time, &max_score, &best_t_id);
-            
-            // 4. Break Condition
-            if (max_score <= TH) {
-                break; // No more spikes crossing the threshold here. Stop peeling!
-            }
-        } // end iter loop
-        refractory_lockout = 15;
-        // Reset tracking because we just altered the past data, but do NOT enforce a lockout
-        prev_max_score = 0.0f;
-        return 0;
-    }
+                
+                // 3. Recalculate to see if another spike was hiding underneath!
+                // NOTE: We must rescan at the PEAK time, not the current time
+                get_max_score_at_time(sample, peak_time, &peak_cf, &peak_dot, &best_t_id);
+                
+                // 4. Break Condition
+                if (peak_cf <= TH_LEARNED_SQ) break;
+
+            } // end iter loop
+            // Reset tracking because we just altered the past data, but do NOT enforce a lockout
+            prev_max_cf    = 0.0f;
+            prev_max_dot   = 0.0f;
+            prev_best_t_id = -1;
+            return 0;
+        }
+
 
     // --- TRACKING PHASE ---
     // If we haven't hit a peak yet, save the current score for the next loop iteration
-    prev_max_score = current_score;
+    prev_max_cf = current_cf;
+    prev_max_dot = current_dot;
     prev_best_t_id = current_t_id;
 
     return(0);
@@ -312,24 +305,31 @@ int main() {
 
     char filename[] = "/data/mS51/dat/mS51_49/mS51_49.dat";
     char results_dir[] = "/data/results/mS51_res/flows_c";
-    uint64_t binary_size = get_file_size_posix(filename);
 
     printf("Reading data from %s...\n", filename);
-    FILE *fptr;
-    fptr = fopen(filename, "rb");
-    if (!fptr) {
-        fprintf(stderr, "Error opening binary file");
-        return -1; // Return error batch
-    }
+    FILE *fptr = fopen(filename, "rb");
+    if (!fptr) { fprintf(stderr, "Error opening binary file\n"); return -1; }
+
+    // Compute total sample count from file size
+    fseek(fptr, 0, SEEK_END);
+    uint64_t file_bytes  = (uint64_t)ftell(fptr);
+    uint64_t total_samples = file_bytes / (NCHAN_BIN * sizeof(int16_t));
+    fseek(fptr, 0, SEEK_SET);
     
     sample.head = 0;
     num_spikes = 0;
+    memset(temp, 0, sizeof(temp));
     memset(&sample.raw_data, 0, sizeof(sample.raw_data));
-    uint32_t batch_size = binary_size /(NCHAN_BIN * sizeof(int16_t));
-    SpikeEvent *spike_results;
-    spike_results = malloc(2 * batch_size * sizeof(SpikeEvent));
 
-    for (uint32_t i = 0; i < 1000; i++) {
+    uint32_t    binary_size = (uint32_t)total_samples;
+    SpikeEvent *spike_results = malloc(2 * binary_size * sizeof(SpikeEvent));
+    if (!spike_results) { fprintf(stderr, "malloc failed\n"); return -1; } 
+
+    uint64_t start_sample = 72000000;
+    uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
+    fseek(fptr, (long)byte_offset, SEEK_SET);
+
+    for (uint32_t i = 72000000; i < 72002000; i++) {
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
             printf("last batch is too small");
@@ -341,15 +341,15 @@ int main() {
             break;
         }
         if (i < (nt - 1)) {continue;}
-        int m_ret = template_match(&sample, spike_results, &num_spikes, &batch_size, 1, i);
+        int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, i);
         if (i % 100000 == 0) {
-            printf("Processed %u batches...\n out of %u", i, (uint32_t)(binary_size / (NCHAN_BIN * sizeof(int16_t))));
+            printf("Processed %u batches... out of %u\n", i, (uint32_t)(binary_size / (NCHAN_BIN * sizeof(int16_t))));
         }
     }
     fclose(fptr);
     // ---------- END OF BATCH PROCESSING LOOP ----------
     
-    printf("\nProcessing complete. Detected %u spikes.\nSaving results in Kilosort format...\n", num_spikes);
+    printf("Processing complete. Detected %u spikes.\nSaving results in Kilosort format...\n", num_spikes);
     
     // 1. Allocate flat arrays for Kilosort output types
     // Note: Kilosort prefers int64 for time, int32 for templates, and float64 for amplitudes
