@@ -317,11 +317,11 @@ int main() {
     SpikeEvent *spike_results = malloc(2 * binary_size * sizeof(SpikeEvent));
     if (!spike_results) { fprintf(stderr, "malloc failed\n"); return -1; } 
 
-    uint64_t start_sample = 72000000;
-    uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
-    fseek(fptr, (long)byte_offset, SEEK_SET);
+    //uint64_t start_sample = 72000000;
+    //uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
+    //fseek(fptr, (long)byte_offset, SEEK_SET);
 
-    for (uint32_t i = 72000000; i < 72002000; i++) {
+    for (uint32_t i = 0; i < total_samples; i++) {
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
             printf("last batch is too small");

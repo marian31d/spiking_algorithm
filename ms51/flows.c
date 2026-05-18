@@ -23,7 +23,7 @@
 #define FB 71       //0.5 * filter buffer size 
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
-#define TH_LEARNED_SQ 64.00    //check if it's constant
+#define TH_LEARNED_SQ 16.00    //check if it's constant
 #define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 
 /*
@@ -230,8 +230,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                     for (int ts = 0; ts < nt; ts++) {
                         float reconstructed = 0.0f;
                         for (int p = 0; p < NPCS; p++)
-                            reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]
-                                            * wPCA[p*nt + ts];
+                            reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + ts];
                         reconstructed *= amp;
                         sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] -= reconstructed;
                     }
