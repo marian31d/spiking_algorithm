@@ -20,7 +20,6 @@
 #define nt 61
 #define RB 64       //ring buffer length
 #define RING_MASK (RB - 1)
-#define FB 71       //0.5 * filter buffer size 
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 16.00    //check if it's constant
@@ -195,12 +194,12 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         // 1. Calculate the score for the current microsecond
         get_max_score_at_time(sample, i, &current_cf, &current_dot, &current_t_id);
 
-        printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
+        //printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
 
         // --- PEAK DETECTION & PEELING PHASE ---
         // Wait until the score drops. If prev_max_score is higher than current_score, the peak was exactly 1 sample ago!
         if (prev_max_cf > TH_LEARNED_SQ && prev_max_cf > current_cf) {
-            printf("Peak detected at time index %u with score %f (Template %d)\n", i - 1, prev_max_cf, prev_best_t_id);
+            //printf("Peak detected at time index %u with score %f (Template %d)\n", i - 1, prev_max_cf, prev_best_t_id);
             // We lock onto the peak from 1 sample ago!
             float peak_cf   = prev_max_cf;
             float peak_dot  = prev_max_dot;
@@ -324,11 +323,11 @@ int main() {
     SpikeEvent *spike_results = malloc(2 * binary_size * sizeof(SpikeEvent));
     if (!spike_results) { fprintf(stderr, "malloc failed\n"); return -1; } 
 
-    uint64_t start_sample = 72000000;
-    uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
-    fseek(fptr, (long)byte_offset, SEEK_SET);
+    //uint64_t start_sample = 72000000;
+    //uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
+    //fseek(fptr, (long)byte_offset, SEEK_SET);
 
-    for (uint32_t i = 72000000; i < 72002000; i++) {
+    for (uint32_t i = 0; i < total_samples; i++) {
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
             printf("last batch is too small");
@@ -342,7 +341,7 @@ int main() {
         if (i < (nt - 1)) {continue;}
         int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, i);
         if (i % 100000 == 0) {
-            printf("Processed %u batches... out of %u\n", i, (uint32_t)(binary_size / (NCHAN_BIN * sizeof(int16_t))));
+            printf("Processed %u batches... out of %u\n", i, (uint32_t)(binary_size));
         }
     }
     fclose(fptr);
@@ -370,9 +369,9 @@ int main() {
 
     // 3. Format the file paths
     char times_file[256], temp_file[256], amp_file[256];
-    snprintf(times_file, sizeof(times_file), "%s/spike_times.npy", results_dir);
-    snprintf(temp_file,  sizeof(temp_file),  "%s/spike_templates.npy", results_dir);
-    snprintf(amp_file,   sizeof(amp_file),   "%s/amplitudes.npy", results_dir);
+    snprintf(times_file, sizeof(times_file), "%s/spike_times_iir.npy", results_dir);
+    snprintf(temp_file,  sizeof(temp_file),  "%s/spike_templates_iir.npy", results_dir);
+    snprintf(amp_file,   sizeof(amp_file),   "%s/amplitudes_iir.npy", results_dir);
 
     // 4. Save as .npy using Little-Endian NumPy types (<i8, <i4, <f8)
     save_npy(times_file, spike_times,     num_spikes, sizeof(int64_t), "<i8");
