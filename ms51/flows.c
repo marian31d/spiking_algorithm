@@ -18,7 +18,7 @@
 #define NCHAN 126
 #define FS 20000
 #define nt 61
-#define RB 64       //ring buffer length
+#define RB 128       //ring buffer length prev 64
 #define RING_MASK (RB - 1)
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
@@ -52,6 +52,10 @@ static uint32_t num_spikes = 0;
 static float prev_max_cf    = 0.0f;   // Cf = relu(dot)^2 / nm  (for threshold)
 static float prev_max_dot   = 0.0f;   // raw dot product         (for amp = dot/nm)
 static int   prev_best_t_id = -1;
+
+//filter history variables - should be located in TCM for speed
+static float iir_y1[NCHAN];  // y[n-1] per channel
+static float iir_y2[NCHAN];  // y[n-2] per channel
 
 
 // Function to read batchs of binary data from the file (to be changed to read the data from other source)
@@ -115,11 +119,14 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
 
     // 1. Filter each sample
     for (int c = 0; c < NCHAN; c++){    
-        sample->raw_data[h][c] = ((iir_weights[0] * temp[h][c]) + 
-            (iir_weights[1] * temp[h1][c]) + 
-            (iir_weights[2] * temp[h2][c]) - 
-            (iir_weights[3] * sample->raw_data[h1][c]) - 
-            (iir_weights[4] * sample->raw_data[h2][c]));
+        float y = (iir_weights[0] * temp[h][c]) 
+            + (iir_weights[1] * temp[h1][c])
+            + (iir_weights[2] * temp[h2][c])
+            - (iir_weights[3] * iir_y1[c])
+            - (iir_weights[4] * iir_y2[c]);
+        iir_y2[c] = iir_y1[c];
+        iir_y1[c] = y;
+        sample->raw_data[h][c] = y;
     }
 
     // 2. Apply CAR (Common Average Referencing)
