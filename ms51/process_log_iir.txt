@@ -1,4 +1,6 @@
 Reading data from /data/mS51/dat/mS51_49/mS51_49.dat...
+Wall_nm[0]=94.148064 Wall_nm[1]=85.595383 Wall_nm[2]=99.422394
+Wall[0]=-8.064551 Wall[1]=-3.730881 wPCA[0]=-0.033326
 Processed 100000 batches... out of 415069920
 Processed 200000 batches... out of 415069920
 Processed 300000 batches... out of 415069920
@@ -4149,9 +4151,9 @@ Processed 414700000 batches... out of 415069920
 Processed 414800000 batches... out of 415069920
 Processed 414900000 batches... out of 415069920
 Processed 415000000 batches... out of 415069920
-Processing complete. Detected 108142822 spikes.
+Processing complete. Detected 63959680 spikes.
 Saving results in Kilosort format...
-Saved 108142822 spikes to /data/results/mS51_res/flows_c/spike_times_iir.npy
-Saved 108142822 spikes to /data/results/mS51_res/flows_c/spike_templates_iir.npy
-Saved 108142822 spikes to /data/results/mS51_res/flows_c/amplitudes_iir.npy
+Saved 63959680 spikes to /data/results/mS51_res/flows_c/spike_times_iir.npy
+Saved 63959680 spikes to /data/results/mS51_res/flows_c/spike_templates_iir.npy
+Saved 63959680 spikes to /data/results/mS51_res/flows_c/amplitudes_iir.npy
 Done!
