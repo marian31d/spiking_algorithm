@@ -100,21 +100,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
     uint32_t h2 = (h - 2) & RING_MASK;
     
     for (int c = 0; c < NCHAN; c++){
-        if (i == 0){ 
-            temp[h][c] = sample->raw_data[h][c];
-            temp[h1][c] = sample->raw_data[h][c]; // Input history is DC
-            temp[h2][c] = sample->raw_data[h][c];
-            // Output history of a high-pass filter at DC is ZERO!
-            sample->raw_data[h1][c] = 0.0f;
-            sample->raw_data[h2][c] = 0.0f;
-        }
-        else if (i == 1){
-            temp[h][c] = sample->raw_data[h][c];
-            sample->raw_data[h2][c] = 0.0f; // h2 is still time 0
-        } 
-        else {
-            temp[h][c] = sample->raw_data[h][c];
-        }
+        temp[h][c] = sample->raw_data[h][c];
     }
 
     // 1. Filter each sample
@@ -241,7 +227,6 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                         sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] -= reconstructed;
                     }
                 }
-                
                 // 3. Recalculate to see if another spike was hiding underneath!
                 // NOTE: We must rescan at the PEAK time, not the current time
                 get_max_score_at_time(sample, peak_time, &peak_cf, &peak_dot, &best_t_id);
@@ -250,6 +235,12 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                 if (peak_cf <= TH_LEARNED_SQ) break;
 
             } // end iter loop
+
+            // For debugging: Print the first detected spike's details
+            if (*spike_count == 1) {
+                printf("First spike: time=%u template=%d dot=%f nm=%f cf=%f\n",
+                    peak_time, best_t_id, peak_dot, Wall_nm[best_t_id], peak_cf);
+            }
             // Reset tracking because we just altered the past data, but do NOT enforce a lockout
             prev_max_cf    = 0.0f;
             prev_max_dot   = 0.0f;
@@ -333,6 +324,12 @@ int main() {
     //uint64_t start_sample = 72000000;
     //uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
     //fseek(fptr, (long)byte_offset, SEEK_SET);
+
+    // Add temporarily in main, before the loop:
+    printf("Wall_nm[0]=%f Wall_nm[1]=%f Wall_nm[2]=%f\n", 
+        Wall_nm[0], Wall_nm[1], Wall_nm[2]);
+    printf("Wall[0]=%f Wall[1]=%f wPCA[0]=%f\n",
+        Wall[0], Wall[1], wPCA[0]);
 
     for (uint32_t i = 0; i < total_samples; i++) {
         int r_ret = dma_read_block(fptr, i, &sample);
