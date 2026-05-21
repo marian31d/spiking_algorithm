@@ -161,6 +161,7 @@ static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, flo
     *out_max_dot   = 0.0f;
     *out_best_t_id = -1;
     for(int t = 0; t < NCLU; t++){
+        if (Wall_nm[t] < 1e-6f) continue;
             float dot = 0.0f;
             for(int c = 0; c < NCHAN; c++){
                 for(int p = 0; p < NPCS; p++){
@@ -217,6 +218,12 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                 }
                 
                 // 2. Reconstruct and Subtract (Erase the spike)
+                if (Wall_nm[best_t_id] < 1e-6f) {
+                    prev_max_cf = 0.0f;
+                    prev_max_dot = 0.0f;
+                    prev_best_t_id = -1;
+                    return 0;  // degenerate template, skip
+                }
                 float amp = peak_dot / Wall_nm[best_t_id];
                 for (int c = 0; c < NCHAN; c++) {
                     for (int ts = 0; ts < nt; ts++) {
