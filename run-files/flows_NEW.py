@@ -236,7 +236,7 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshif
             dshift = np.asarray(dshift)
 
     if zero_dshift:
-        # Online/SoC phase: zero out drift correction.
+        # Option tp zero out drift correction.
         # Pass explicit zeros (not None) so BinaryFiltered applies zero shift
         # per batch without recomputing drift from scratch.
         if dshift is not None:
@@ -293,7 +293,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
         "tmin": 0.0,
         "tmax": float(HOUR_SEC),
         "n_pcs": 3,
-        "batch_size": 32768,
+        #"batch_size": 32768,
         "nearest_chans": 8,
     }
 
@@ -307,34 +307,58 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     ops, st, clu, tF, Wall, _, _, _, _ =_sort(settings["filename"],
                    results_dir, probe, settings, DATA_DTYPE, DEVICE, DO_CAR, CLEAR_CACHE, INVERT_SIGN,
                    SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, file_object=None, progress_bar=None, gui_sorter=None)
-
+                   
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Storing parameters for Soc
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+export_dir = os.path.join(results_dir, "export")
     # ======================================================
-    # SAVES DRIFT MATRIX
+    # SAVES DRIFT MATRIX & WHITENING
     # ======================================================
     # Calculate the median drift across all batches (Time dimension = 0)
     # This ignores sudden jolts and finds the most stable resting position
     stable_drift_state = np.median(ops['dshift'], axis=0)
-
     M = get_drift_matrix(ops, stable_drift_state, device=torch.device('cuda'))
-    Wsh = (M @ ops['Wrot'])
-    if torch.is_tensor(Wsh):
-        Wsh_np = Wsh.detach().cpu().numpy()
-    else:
-        Wsh_np = Wsh
-    # Save as standard numpy binary
-    save_path = os.path.join(results_dir, "Wsh")
-    np.save(save_path, Wsh_np)
-    print(f"Drift and Wrot matrix saved to: {save_path} with shape {Wsh_np.shape}")
-
+    Wrot = ops['Wrot']
+    Wsh = (M @ Wrot)
+    Wsh_np = Wsh.detach().cpu().numpy() if torch.is_tensor(Wsh) else Wsh
+    np.save(os.path.join(export_dir, "Wsh"), Wsh_np)
+    Wrot_np = Wrot.detach().cpu().numpy() if torch.is_tensor(Wrot) else Wrot
+    np.save(os.path.join(export_dir, "Wrot"), Wrot_np)              
+    print(f"[OFFLINE] Wsh and Wrot matrices saved with shape {Wsh_np.shape}")
     # ======================================================
-    # EXPORT wPCA FOR BARE-METAL C FIR FILTERS
+    # EXPORT wPCA FOR BARE-METAL C
     # ======================================================
     wPCA_tensor = ops.get('wPCA', None)
     if wPCA_tensor is not None:
         wPCA_np = wPCA_tensor.detach().cpu().numpy() if torch.is_tensor(wPCA_tensor) else wPCA_tensor
-        np.save(os.path.join(results_dir, "wPCA.npy"), wPCA_np)
-        logger.info(f"Exported wPCA master shapes for C hardware: {wPCA_np.shape}")
-
+        np.save(os.path.join(export_dir, "wPCA.npy"), wPCA_np)
+        print(f"[OFFLINE] Exported wPCA master shapes for C hardware: {wPCA_np.shape}")
+    # ======================================================
+    # EXPORT Wall AND NM FOR BARE-METAL C
+    # ======================================================
+    Wall_np = Wall.detach().cpu().numpy() if torch.is_tensor(Wall) else Wall
+    np.save(os.path.join(results_dir, "Wall.npy"), Wall_np)
+    np.save(os.path.join(export_dir, "Wall.npy"), Wall_np)
+    nm = (Wall ** 2).sum(axis=-1).sum(axis=-1)
+    np.save(os.path.join(export_dir, "Wall_nm.npy"), nm.detach().cpu().numpy().astype(np.float32))
+    print(f"[OFFLINE] Exported Wall templates: {Wall.shape} and nm: {nm.shape}")
+    # ======================================================
+    # EXPORT CTC FOR BARE-METAL C
+    # ======================================================
+    #probably will not be needed for bare metal C -takes a lot of space but will export anyways
+    n_pcs = int(ops["settings"]["n_pcs"])
+    if Wall.shape[1] == n_pcs:
+        Wall_match = Wall
+    elif Wall.shape[2] == n_pcs:
+        Wall_match = Wall.permute(0, 2, 1).contiguous()
+    else:
+        raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
+    Wall_match = Wall_match.to(DEVICE)
+    ctc = template_matching.prepare_matching(ops, Wall_match)
+    np.save(os.path.join(export_dir, "ctc.npy"), ctc.detach().cpu().numpy())
+    print(f"[OFFLINE] Exported cross-correlation (ctc) between all template: {ctc.shape}")
+                   
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
     logger.info("Offline stats written")
     return
@@ -375,29 +399,7 @@ def online_flow(bin_path: Path, probe_path: Path,
 
     # Build binary file object
     bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
-                                      zero_dshift=False)
-                  
-    # ======================================================
-    # C HARDWARE EXPORT: NORMALIZE WALL TO 1.0
-    # ======================================================
-    # 'Wall' is loaded above as shape (N_TEMPLATES, NCHAN, NPCS)
-    # The C code requires it in this exact shape, but strictly normalized to 1.0.
-    wPCA_t = ops['wPCA'].to(DEVICE) # Shape: (NPCS, nt)
-
-    # 1. Reconstruct the full waveform: (N, NCHAN, NPCS) @ (NPCS, nt) -> (N, NCHAN, nt)
-    full_templates = torch.matmul(Wall, wPCA_t)
-
-    # 2. Calculate the L2 Norm (amplitude) across spatial and temporal dimensions
-    # keepdim=True creates a shape of (N_TEMPLATES, 1, 1) so it broadcasts perfectly
-    norms = torch.sqrt(torch.sum(full_templates**2, dim=(1, 2), keepdim=True))
-    norms[norms == 0] = 1.0 # Prevent divide-by-zero on empty clusters
-
-    # 3. Divide Wall by the norm to shrink templates to exactly 1.0
-    Wall_normalized = Wall / norms
-
-    # 4. Save for the C compiler!
-    np.save(out_dir / "Wall.npy", Wall.detach().cpu().numpy())
-    logger.info(f"[ONLINE] Exported purely mathematical unit-shapes: Wall.npy")
+                                      zero_dshift=True)
 
     # ======================================================
     n_pcs = int(ops["settings"]["n_pcs"])
@@ -407,9 +409,6 @@ def online_flow(bin_path: Path, probe_path: Path,
         Wall_match = Wall.permute(0, 2, 1).contiguous()
     else:
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
-      
-    np.save(out_dir / "Wall_normalized.npy", Wall_normalized.detach().cpu().numpy())
-    logger.info("[ONLINE] Exported properly aligned Wall_normalized.npy for C hardware.")
     # ----------------------------------------
     logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     # Core SoC simulation: Template Matching
@@ -428,7 +427,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     spike_templates = st_abs[:, 1].astype(np.int64, copy=False)
 
     # ======================================================
-    # FIX: MAP TEMPLATES TO FINAL GUI CLUSTERS
+    # Option: MAP TEMPLATES TO FINAL GUI CLUSTERS
     # ======================================================
     # This ensures F1/Precision matches by accounting for GUI merges
     mapping_path = offline_dir / "spike_clusters.npy"
