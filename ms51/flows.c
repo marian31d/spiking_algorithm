@@ -46,7 +46,6 @@ typedef struct {
 }SpikeEvent;
 
 static SampleBuffer sample;
-static float temp[RB][NCHAN]; //temporary array for storing padded batch 
 static uint32_t num_spikes = 0;
 
 static float prev_max_cf    = 0.0f;   // Cf = relu(dot)^2 / nm  (for threshold)
@@ -54,6 +53,8 @@ static float prev_max_dot   = 0.0f;   // raw dot product         (for amp = dot/
 static int   prev_best_t_id = -1;
 
 //filter history variables - should be located in TCM for speed
+static float iir_x1[NCHAN];  // x[n-1] raw input
+static float iir_x2[NCHAN];  // x[n-2] raw input
 static float iir_y1[NCHAN];  // y[n-1] per channel
 static float iir_y2[NCHAN];  // y[n-2] per channel
 
@@ -87,7 +88,7 @@ int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
         // 3. The Padding Loop
         for (int c = 0; c < NCHAN; c++) {
             // we pad the current timestep if it's missing less than NCHAN channels
-            sample->raw_data[h][c] = sample->raw_data[(h + 63) & RING_MASK][c];    
+            sample->raw_data[h][c] = sample->raw_data[(h - 1) & RING_MASK][c];    
         }   
         return 0; // Success! The batch is fully padded and ready for math.
     }
@@ -101,18 +102,17 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
     uint32_t h = sample->head;
     uint32_t h1 = (h - 1) & RING_MASK;
     uint32_t h2 = (h - 2) & RING_MASK;
-    
-    for (int c = 0; c < NCHAN; c++){
-        temp[h][c] = sample->raw_data[h][c];
-    }
 
     // 1. Filter each sample
     for (int c = 0; c < NCHAN; c++){    
-        float y = (iir_weights[0] * temp[h][c]) 
-            + (iir_weights[1] * temp[h1][c])
-            + (iir_weights[2] * temp[h2][c])
+        float x0 = sample->raw_data[h][c];
+        float y = (iir_weights[0] * x0) 
+            + (iir_weights[1] * iir_x1[c])
+            + (iir_weights[2] * iir_x2[c])
             - (iir_weights[3] * iir_y1[c])
             - (iir_weights[4] * iir_y2[c]);
+        iir_x2[c] = iir_x1[c];
+        iir_x1[c] = x0;
         iir_y2[c] = iir_y1[c];
         iir_y1[c] = y;
         sample->raw_data[h][c] = y;
@@ -150,22 +150,22 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
 }
 
 // static inline suggests the compiler inline the assembly to avoid call overhead
-static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, float *out_max_cf, float *out_max_dot, int *out_best_t_id) {
-    float pc_scores[NCHAN][NPCS]; 
-    //raw_data[61][128] || wPCA[3][61] 
-    //we calculate the temporal scores and eleminate the temporal dimension
-    // 1. Temporal Dot Product
+static inline void get_max_score_at_time(SampleBuffer *sample, uint32_t ring_head, float *out_max_cf, float *out_max_dot, int *out_best_t_id) {
+    float pc_scores[NCHAN][NPCS];
+
+    // 1. Temporal Dot Product - walk backwards from ring_head
     for(int c = 0; c < NCHAN; c++){
         for(int p = 0; p < NPCS; p++){
             float score = 0;
-            #pragma GCC unroll 61 // Tells GCC compiler to obliterate the loop
+            #pragma GCC unroll 61
             for(int s = 0; s < nt; s++){
-                score += sample->raw_data[(time_idx - (nt - 1 - s)) & RING_MASK][c] * wPCA[p * nt + s];
+                score += sample->raw_data[(ring_head - (nt - 1 - s)) & RING_MASK][c] * wPCA[p * nt + s];
             }
             pc_scores[c][p] = score;
         }
     }
-    // 2. Spatial Collapse & Winner Selection
+
+    // 2. Spatial Collapse & Winner Selection - unchanged
     *out_max_cf    = 0.0f;
     *out_max_dot   = 0.0f;
     *out_best_t_id = -1;
@@ -177,15 +177,11 @@ static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, flo
                 dot += pc_scores[c][p] * Wall[t * (NCHAN * NPCS) + c * NPCS + p];
             }
         }
-        printf("Dot product for template %d at time index %d: %f\n", t, time_idx, dot);
-        // Kilosort: Cf = relu(B)^2 / nm
         float cf = (RELU(dot) * RELU(dot)) / Wall_nm[t];
-
         if (cf > *out_max_cf) {
             *out_max_cf    = cf;
             *out_max_dot   = dot;
             *out_best_t_id = t;
-            printf("Local maximum CF for template %d at time index %d: %f\n", t, time_idx, cf);
         }
     }
 }
@@ -196,26 +192,23 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
 
         // --- SCANNING PHASE ---
         // 1. Calculate the score for the current microsecond
-        get_max_score_at_time(sample, i, &current_cf, &current_dot, &current_t_id);
+        get_max_score_at_time(sample, sample->head, &current_cf, &current_dot, &current_t_id);
 
         //printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
 
         // --- PEAK DETECTION & PEELING PHASE ---
-        // Wait until the score drops. If prev_max_score is higher than current_score, the peak was exactly 1 sample ago!
         if (prev_max_cf > TH_LEARNED_SQ && prev_max_cf > current_cf) {
-            //printf("Peak detected at time index %u with score %f (Template %d)\n", i - 1, prev_max_cf, prev_best_t_id);
-            // We lock onto the peak from 1 sample ago!
+
+            // peak_head is the ring buffer position one step ago, where the actual spike peak sits
+            uint32_t peak_head = (sample->head - 1) & RING_MASK;
+
+            // absolute_time: the template peak is at wPCA index 20, which is (nt-1-20)=40 samples
+            // before the end of the window, so subtract 40 from the current absolute sample index
+            uint32_t peak_time = (i >= 42) ? (i - 42) : 0;  // i-1 for the lag, then -40 for template offset
+
             float peak_cf   = prev_max_cf;
             float peak_dot  = prev_max_dot;
             int   best_t_id = prev_best_t_id;
-            
-            uint32_t peak_head = (sample->head - 1) & RING_MASK; // The head position at the peak
-            // The peak of the Kilosort template is at index 20. 
-            // The current head is at index 60. Therefore, the peak happened 40 samples ago
-            uint32_t peak_time = 0;
-            if (i >= 40) {
-                peak_time = i - 40; 
-            }
             // --- ORIGINAL PEELING LOOP ---
             for(int iter = 0; iter < MAX_PEELS; iter++) {
                 
@@ -225,16 +218,11 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                     spike_results[*spike_count].template_id = best_t_id;
                     spike_results[*spike_count].score = peak_dot / Wall_nm[best_t_id];;
                     (*spike_count)++;
-                    printf("spike detected at time %u with template %d and score %f iter No. %d.\n", peak_time, best_t_id, spike_results[*spike_count-1].score, iter);
+                    //printf("spike detected at time %u with template %d and score %f iter No. %d.\n", peak_time, best_t_id, spike_results[*spike_count-1].score, iter);
                 }
                 
                 // 2. Reconstruct and Subtract (Erase the spike)
-                if (Wall_nm[best_t_id] < 1e-6f) {
-                    prev_max_cf = 0.0f;
-                    prev_max_dot = 0.0f;
-                    prev_best_t_id = -1;
-                    return 0;  // degenerate template, skip
-                }
+                if (Wall_nm[best_t_id] < 1e-6f) break;  // degenerate template, skip
                 float amp = peak_dot / Wall_nm[best_t_id];
                 for (int c = 0; c < NCHAN; c++) {
                     for (int ts = 0; ts < nt; ts++) {
@@ -242,32 +230,29 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                         for (int p = 0; p < NPCS; p++)
                             reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + ts];
                         reconstructed *= amp;
-                        printf("Subtracting from channel %d at time index %u (original value: %f, subtracted value: %f, after subtraction: %f)\n", c, (peak_head - (nt-1-ts)) & RING_MASK, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c], reconstructed, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] - reconstructed);
-                        sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] -= reconstructed;
+                        //printf("Subtracting from channel %d at time index %u (original value: %f, subtracted value: %f, after subtraction: %f)\n", c, (peak_head - (nt-1-ts)) & RING_MASK, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c], reconstructed, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] - reconstructed);
+                        sample->raw_data[(peak_head - (nt - 1 - ts)) & RING_MASK][c] -= reconstructed;
                     }
                 }
                 // 3. Recalculate to see if another spike was hiding underneath!
                 // NOTE: We must rescan at the PEAK time, not the current time
-                get_max_score_at_time(sample, peak_time, &peak_cf, &peak_dot, &best_t_id);
+                get_max_score_at_time(sample, peak_head, &peak_cf, &peak_dot, &best_t_id);
                 
                 // 4. Break Condition
                 if (peak_cf <= TH_LEARNED_SQ) break;
 
             } // end iter loop
-            // Reset tracking because we just altered the past data, but do NOT enforce a lockout
-            prev_max_cf    = 0.0f;
-            prev_max_dot   = 0.0f;
-            prev_best_t_id = -1;
-            return 0;
+        // set the previous max to the peeled current max cause that's the closes peeled score we can get without forcing an off time for next spike
+        prev_max_cf    = peak_cf;
+        prev_max_dot   = peak_dot;
+        prev_best_t_id = best_t_id;
+        return 0;
         }
-
-
     // --- TRACKING PHASE ---
     // If we haven't hit a peak yet, save the current score for the next loop iteration
     prev_max_cf = current_cf;
     prev_max_dot = current_dot;
     prev_best_t_id = current_t_id;
-
     return(0);
 }
 
@@ -327,7 +312,6 @@ int main() {
     
     sample.head = 0;
     num_spikes = 0;
-    memset(temp, 0, sizeof(temp));
     memset(&sample.raw_data, 0, sizeof(sample.raw_data));
 
     uint32_t    binary_size = (uint32_t)total_samples;
@@ -343,8 +327,8 @@ int main() {
         Wall_nm[0], Wall_nm[1], Wall_nm[2]);
     printf("Wall[0]=%f Wall[1]=%f wPCA[0]=%f\n",
         Wall[0], Wall[1], wPCA[0]);
-//total_samples
-    for (uint32_t i = 0; i <(nt+3); i++) {
+//(nt+3)
+    for (uint32_t i = 0; i <total_samples; i++) {
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
             printf("last batch is too small");
