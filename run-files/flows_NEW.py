@@ -311,6 +311,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Storing parameters for Soc
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+export_dir = os.path.join(results_dir, "export")
     # ======================================================
     # SAVES DRIFT MATRIX & WHITENING
     # ======================================================
@@ -321,9 +322,9 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     Wrot = ops['Wrot']
     Wsh = (M @ Wrot)
     Wsh_np = Wsh.detach().cpu().numpy() if torch.is_tensor(Wsh) else Wsh
-    np.save(os.path.join(results_dir, "Wsh"), Wsh_np)
+    np.save(os.path.join(export_dir, "Wsh"), Wsh_np)
     Wrot_np = Wrot.detach().cpu().numpy() if torch.is_tensor(Wrot) else Wrot
-    np.save(os.path.join(results_dir, "Wrot"), Wrot_np)              
+    np.save(os.path.join(export_dir, "Wrot"), Wrot_np)              
     print(f"[OFFLINE] Wsh and Wrot matrices saved with shape {Wsh_np.shape}")
     # ======================================================
     # EXPORT wPCA FOR BARE-METAL C
@@ -331,21 +332,31 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     wPCA_tensor = ops.get('wPCA', None)
     if wPCA_tensor is not None:
         wPCA_np = wPCA_tensor.detach().cpu().numpy() if torch.is_tensor(wPCA_tensor) else wPCA_tensor
-        np.save(os.path.join(results_dir, "wPCA.npy"), wPCA_np)
+        np.save(os.path.join(export_dir, "wPCA.npy"), wPCA_np)
         print(f"[OFFLINE] Exported wPCA master shapes for C hardware: {wPCA_np.shape}")
     # ======================================================
     # EXPORT Wall AND NM FOR BARE-METAL C
     # ======================================================
-    np.save(os.path.join(out_dir, "Wall.npy"), Wall.detach().cpu().numpy())
-    nm = (Wall ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)
-    np.save(os.path.join(results_dir, "Wall_nm.npy"), nm.detach().cpu().numpy())
+    Wall_np = Wall.detach().cpu().numpy() if torch.is_tensor(Wall) else Wall
+    np.save(os.path.join(results_dir, "Wall.npy"), Wall_np)
+    np.save(os.path.join(export_dir, "Wall.npy"), Wall_np)
+    nm = (Wall ** 2).sum(axis=-1).sum(axis=-1)
+    np.save(os.path.join(export_dir, "Wall_nm.npy"), nm.detach().cpu().numpy().astype(np.float32))
     print(f"[OFFLINE] Exported Wall templates: {Wall.shape} and nm: {nm.shape}")
     # ======================================================
     # EXPORT CTC FOR BARE-METAL C
     # ======================================================
     #probably will not be needed for bare metal C -takes a lot of space but will export anyways
-    ctc = template_matching.prepare_matching(ops, Wall)
-    np.save(os.path.join(results_dir, "ctc.npy"), ctc.detach().cpu().numpy())
+    n_pcs = int(ops["settings"]["n_pcs"])
+    if Wall.shape[1] == n_pcs:
+        Wall_match = Wall
+    elif Wall.shape[2] == n_pcs:
+        Wall_match = Wall.permute(0, 2, 1).contiguous()
+    else:
+        raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
+    Wall_match = Wall_match.to(DEVICE)
+    ctc = template_matching.prepare_matching(ops, Wall_match)
+    np.save(os.path.join(export_dir, "ctc.npy"), ctc.detach().cpu().numpy())
     print(f"[OFFLINE] Exported cross-correlation (ctc) between all template: {ctc.shape}")
                    
     write_offline_stats(results_dir, Wall, st, HOUR_SEC)
