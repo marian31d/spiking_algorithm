@@ -23,12 +23,12 @@
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
-#define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
+#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
-3. storing the batch should be done by linker or memory pecific storing.
+3. storing the batch should be done by linker or memory specific storing.
 4. check if the mean variables needs 32 or 64 bits
 5. need to know how to configure the number of clusters in Wall
 */
