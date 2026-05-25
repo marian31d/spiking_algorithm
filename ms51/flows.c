@@ -23,7 +23,7 @@
 #define NPCS 3
 #define NCLU 266        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
-#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
+#define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -91,6 +91,9 @@ int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
         }   
         return 0; // Success! The batch is fully padded and ready for math.
     }
+    /* printf("Read batch %u: value =\n", i);
+    for(int c=0; c<NCHAN; c++){printf("  %f", sample->raw_data[h][c]); if(c%10==0){printf("\n");}}
+    printf("\n"); */
     return 0; // Success! Reached the end of the 61 rows normally.
 }
 
@@ -114,6 +117,9 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
         iir_y1[c] = y;
         sample->raw_data[h][c] = y;
     }
+    /* printf("Filtered batch %u: value =\n", i);
+    for(int c=0; c<NCHAN; c++){printf("  %f", sample->raw_data[h][c]); if(c%10==0){printf("\n");}}
+    printf("\n"); */
 
     // 2. Apply CAR (Common Average Referencing)
     float spatial_mean = 0.0f;
@@ -137,6 +143,9 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
     for (int w = 0; w < NCHAN; w++) {
         sample->raw_data[h][w] = whitened_temp[w];
     }
+    /* printf("Batch after whitening %u: value =\n", i);
+    for(int c=0; c<NCHAN; c++) {printf("  %f", sample->raw_data[h][c]); if(c%10==0){printf("\n");}}
+    printf("\n"); */
     return(0);
 }
 
@@ -162,22 +171,23 @@ static inline void get_max_score_at_time(SampleBuffer *sample, int time_idx, flo
     *out_best_t_id = -1;
     for(int t = 0; t < NCLU; t++){
         if (Wall_nm[t] < 1e-6f) continue;
-            float dot = 0.0f;
-            for(int c = 0; c < NCHAN; c++){
-                for(int p = 0; p < NPCS; p++){
-                    dot += pc_scores[c][p] * Wall[t * (NCHAN * NPCS) + c * NPCS + p];
-                }
-            }
-            
-            // Kilosort: Cf = relu(B)^2 / nm
-            float cf = (RELU(dot) * RELU(dot)) / Wall_nm[t];
-
-            if (cf > *out_max_cf) {
-                *out_max_cf    = cf;
-                *out_max_dot   = dot;
-                *out_best_t_id = t;
+        float dot = 0.0f;
+        for(int c = 0; c < NCHAN; c++){
+            for(int p = 0; p < NPCS; p++){
+                dot += pc_scores[c][p] * Wall[t * (NCHAN * NPCS) + c * NPCS + p];
             }
         }
+        printf("Dot product for template %d at time index %d: %f\n", t, time_idx, dot);
+        // Kilosort: Cf = relu(B)^2 / nm
+        float cf = (RELU(dot) * RELU(dot)) / Wall_nm[t];
+
+        if (cf > *out_max_cf) {
+            *out_max_cf    = cf;
+            *out_max_dot   = dot;
+            *out_best_t_id = t;
+            printf("Local maximum CF for template %d at time index %d: %f\n", t, time_idx, cf);
+        }
+    }
 }
 
 int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *spike_count, uint32_t *batch_size, int match, uint32_t i){
@@ -206,7 +216,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
             if (i >= 40) {
                 peak_time = i - 40; 
             }
-            // --- YOUR ORIGINAL PEELING LOOP ---
+            // --- ORIGINAL PEELING LOOP ---
             for(int iter = 0; iter < MAX_PEELS; iter++) {
                 
                 // 1. Record the Spike (using the peak time)
@@ -215,6 +225,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                     spike_results[*spike_count].template_id = best_t_id;
                     spike_results[*spike_count].score = peak_dot / Wall_nm[best_t_id];;
                     (*spike_count)++;
+                    printf("spike detected at time %u with template %d and score %f iter No. %d.\n", peak_time, best_t_id, spike_results[*spike_count-1].score, iter);
                 }
                 
                 // 2. Reconstruct and Subtract (Erase the spike)
@@ -231,6 +242,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                         for (int p = 0; p < NPCS; p++)
                             reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + ts];
                         reconstructed *= amp;
+                        printf("Subtracting from channel %d at time index %u (original value: %f, subtracted value: %f, after subtraction: %f)\n", c, (peak_head - (nt-1-ts)) & RING_MASK, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c], reconstructed, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] - reconstructed);
                         sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] -= reconstructed;
                     }
                 }
@@ -242,12 +254,6 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                 if (peak_cf <= TH_LEARNED_SQ) break;
 
             } // end iter loop
-
-            // For debugging: Print the first detected spike's details
-            if (*spike_count == 1) {
-                printf("First spike: time=%u template=%d dot=%f nm=%f cf=%f\n",
-                    peak_time, best_t_id, peak_dot, Wall_nm[best_t_id], peak_cf);
-            }
             // Reset tracking because we just altered the past data, but do NOT enforce a lockout
             prev_max_cf    = 0.0f;
             prev_max_dot   = 0.0f;
@@ -337,8 +343,8 @@ int main() {
         Wall_nm[0], Wall_nm[1], Wall_nm[2]);
     printf("Wall[0]=%f Wall[1]=%f wPCA[0]=%f\n",
         Wall[0], Wall[1], wPCA[0]);
-
-    for (uint32_t i = 0; i < total_samples; i++) {
+//total_samples
+    for (uint32_t i = 0; i <(nt+3); i++) {
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
             printf("last batch is too small");
