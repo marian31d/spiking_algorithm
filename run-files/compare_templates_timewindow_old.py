@@ -79,11 +79,26 @@ def load_labels(phy_dir: str):
 # Spike-time matching
 # -----------------------------
 def match_spike_times_exact(t1: np.ndarray, t2: np.ndarray):
-    s1 = np.argsort(t1)
-    s2 = np.argsort(t2)
-    t1s, t2s = t1[s1], t2[s2]
-    _, i1s, i2s = np.intersect1d(t1s, t2s, return_indices=True)
-    return s1[i1s], s2[i2s]
+    s1 = np.argsort(t1, kind="stable")
+    s2 = np.argsort(t2, kind="stable")
+    a = t1[s1]
+    b = t2[s2]
+
+    i = j = 0
+    m1, m2 = [], []
+
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            m1.append(s1[i])
+            m2.append(s2[j])
+            i += 1
+            j += 1
+        elif a[i] < b[j]:
+            i += 1
+        else:
+            j += 1
+
+    return np.array(m1, dtype=np.int64), np.array(m2, dtype=np.int64)
 
 
 def match_spike_times_tol(t1: np.ndarray, t2: np.ndarray, tol: int):
@@ -621,12 +636,12 @@ def main():
         good_gui = best_match_stats(template_sim, M, gui_ids, gui_good_set, axis=1)
         good_flow = best_match_stats(template_sim, M, flow_ids, flow_good_set, axis=0)
 
-        summary_lines.append("Template similarity (cosine) best-match stats:")
         summary_lines.append("Score definition:")
         summary_lines.append("  -1 = opposite")
         summary_lines.append("  0 = unrelated")
         summary_lines.append("  1 = identical")
         summary_lines.append("  ALL clusters:")
+        summary_lines.append("Template similarity (cosine) best-match stats:")
         summary_lines.append(f"    GUI→FLOW: mean={all_gui['mean_best']:.4f}, "
                              f"spike-wt={all_gui['spike_weighted_mean_best']:.4f}, "
                              f"sqrt-wt={all_gui['sqrt_spike_weighted_mean_best']:.4f}  (n={all_gui['n_considered']})")
