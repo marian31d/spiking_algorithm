@@ -204,7 +204,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
 
             // absolute_time: the template peak is at wPCA index 20, which is (nt-1-20)=40 samples
             // before the end of the window, so subtract 40 from the current absolute sample index
-            uint32_t peak_time = (i >= 42) ? (i - 42) : 0;  // i-1 for the lag, then -40 for template offset
+            uint32_t peak_time = (i >= 42) ? (i - 41) : 0;  // i-1 for the lag, then -40 for template offset
 
             float peak_cf   = prev_max_cf;
             float peak_dot  = prev_max_dot;
@@ -243,9 +243,9 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
 
             } // end iter loop
         // set the previous max to the peeled current max cause that's the closes peeled score we can get without forcing an off time for next spike
-        prev_max_cf    = peak_cf;
-        prev_max_dot   = peak_dot;
-        prev_best_t_id = best_t_id;
+        prev_max_cf    = 0.0f;//peak_cf;
+        prev_max_dot   = 0.0f;//peak_dot;
+        prev_best_t_id = -1;//best_t_id;
         return 0;
         }
     // --- TRACKING PHASE ---
