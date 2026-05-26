@@ -5,25 +5,27 @@
 #include <stdlib.h>
 
 // Include array hearder files for configuration 
+#include "iir_weights.h"
+
 #include "Wall.h"
 #include "Wall_nm.h" 
 #include "Wsh.h"
-#include "iir_weights.h"
 #include "wPCA.h"
 
 #define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
 
 
-#define NCHAN_BIN 135
-#define NCHAN 126
 #define FS 20000
 #define nt 61
-#define RB 128       //ring buffer length prev 64
-#define RING_MASK (RB - 1)
 #define NPCS 3
+#define RB 128 
+#define RING_MASK (RB - 1)
+#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
+
+#define NCHAN_BIN 135
+#define NCHAN 126      //ring buffer length prev 64
 #define NCLU 266        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
-#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.

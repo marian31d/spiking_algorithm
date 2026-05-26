@@ -14,7 +14,7 @@
 #define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
 
 
-#define NCHAN_BIN 135
+#define NCHAN_BIN 128
 #define NCHAN 124
 #define FS 20000
 #define nt 61
