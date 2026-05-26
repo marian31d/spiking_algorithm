@@ -4151,9 +4151,9 @@ Processed 414700000 batches... out of 415069920
 Processed 414800000 batches... out of 415069920
 Processed 414900000 batches... out of 415069920
 Processed 415000000 batches... out of 415069920
-Processing complete. Detected 11652774 spikes.
+Processing complete. Detected 11581366 spikes.
 Saving results in Kilosort format...
-Saved 11652774 spikes to /data/results/mS51_res/flows_c/spike_times_iir.npy
-Saved 11652774 spikes to /data/results/mS51_res/flows_c/spike_templates_iir.npy
-Saved 11652774 spikes to /data/results/mS51_res/flows_c/amplitudes_iir.npy
+Saved 11581366 spikes to /data/results/mS51_res/flows_c/spike_times_iir.npy
+Saved 11581366 spikes to /data/results/mS51_res/flows_c/spike_templates_iir.npy
+Saved 11581366 spikes to /data/results/mS51_res/flows_c/amplitudes_iir.npy
 Done!
