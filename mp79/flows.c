@@ -15,13 +15,13 @@
 
 
 #define NCHAN_BIN 135
-#define NCHAN 126
+#define NCHAN 124
 #define FS 20000
 #define nt 61
 #define RB 128       //ring buffer length prev 64
 #define RING_MASK (RB - 1)
 #define NPCS 3
-#define NCLU 266        //Number of clusters, should be configured on the RAM
+#define NCLU 365        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 #define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 
