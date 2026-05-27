@@ -215,7 +215,7 @@ def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, H
     logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
 
-def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshift=False):
+def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshift=True):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
     fs = float(s["fs"])
@@ -351,11 +351,11 @@ def online_flow(bin_path: Path, probe_path: Path,
     if 'Wrot' in ops:
         precision = 10000
         ops['Wrot'] = torch.round(ops['Wrot'] * precision) / precision
-        logger.info("[ONLINE] Wrot precision reduced to 4 decimal places.")
+        print("[ONLINE] Wrot precision reduced to 4 decimal places.")
 
     # 2. Lower Nearest Channels (Reduce memory bandwidth)
-    ops['settings']['nearest_chans'] = 8
-    ops['nearest_chans'] = 8  # Sync root
+    """ ops['settings']['nearest_chans'] = 8
+    ops['nearest_chans'] = 8 """  # Sync root
 
     # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
     ops['settings']['max_peels'] = 2
@@ -368,8 +368,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops['tmax'] = float(np.inf)   # Sync root
 
     # Build binary file object
-    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf),
-                                      zero_dshift=True)
+    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf), zero_dshift=True)
 
     # ======================================================
     n_pcs = int(ops["settings"]["n_pcs"])
@@ -380,7 +379,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     else:
         raise AssertionError(f"Could not identify n_pcs axis in Wall shape {Wall.shape}")
     # ----------------------------------------
-    logger.info(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
+    print(f"[ONLINE] Running extraction with {len(Wall_match)} templates.")
     # Core SoC simulation: Template Matching
     # We pass the original un-normalized 'Wall_match' here so Kilosort 
     # runs exactly as it always has.
@@ -413,7 +412,7 @@ def online_flow(bin_path: Path, probe_path: Path,
         #spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
         spike_clusters = spike_templates.copy()
     else:
-        logger.warning("[ONLINE] Cluster mapping not found; using cluster = template.")
+        print("[ONLINE] Cluster mapping not found; using cluster = template.")
         spike_clusters = spike_templates
 
     # ======================================================
@@ -424,7 +423,7 @@ def online_flow(bin_path: Path, probe_path: Path,
         src = offline_dir / label_file
         if src.exists():
             shutil.copy(src, out_dir / label_file)
-            logger.info(f"[ONLINE] Copied {label_file} to online directory.")
+            print(f"[ONLINE] Copied {label_file} to online directory.")
 
     # Save all results compatible with Phy/Comparison scripts
     np.save(out_dir / "spike_times.npy", spike_times)
@@ -438,7 +437,7 @@ def online_flow(bin_path: Path, probe_path: Path,
         shutil.copy(offline_dir / "templates.npy", out_dir / "templates.npy")
 
     save_ops(ops, results_dir=out_dir)
-    logger.info("[ONLINE] Online Phase Complete.")
+    print("[ONLINE] Online Phase Complete.")
     return
 
 
