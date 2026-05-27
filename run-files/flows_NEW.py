@@ -278,10 +278,10 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
                    results_dir, probe, settings, DATA_DTYPE, DEVICE, DO_CAR, CLEAR_CACHE, INVERT_SIGN,
                    SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, file_object=None, progress_bar=None, gui_sorter=None)
                    
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Storing parameters for Soc
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-export_dir = os.path.join(results_dir, "export")
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # Storing parameters for Soc
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    export_dir = os.path.join(results_dir, "export")
     # ======================================================
     # SAVES DRIFT MATRIX & WHITENING
     # ======================================================
