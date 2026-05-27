@@ -344,6 +344,8 @@ def main():
                     help="Only use spikes with spike_times >= t_start (in samples). Default: 0 (use all).")
     ap.add_argument("--t_end", default=-1, type=int,
                     help="If >0, only use spikes with spike_times < t_end (in samples). Default: -1 (no end).")
+    ap.add_argument("--mask-flows", default=0, type=int,
+                    help="If 1, filter flows data too. Default: 0 (keep the same).")
     args = ap.parse_args()
 
     gui_phy = Path(args.gui_phy).resolve()
@@ -360,6 +362,7 @@ def main():
     # Optional time window filter (applied to GUI)
     t_start = int(args.t_start*20000)
     t_end = int(args.t_end*20000)
+    mask-flows = bool(args.mask_flows)
     if t_start < 0:
         raise ValueError("--t_start must be >= 0 (units: samples).")
     if t_end > 0 and t_end <= t_start:
@@ -372,18 +375,23 @@ def main():
             return (tt >= t_start)
 
         gui_mask = _mask_times(gui_times)
+        flows_mask = _mask_times(flow_times) if mask-flows else None
 
         print(f"Applying time window: t_start={t_start}, t_end={'∞' if t_end <= 0 else t_end} (samples)")
         print(f"  GUI spikes kept:  {int(gui_mask.sum())}/{int(gui_times.size)}")
 
         gui_times = gui_times[gui_mask]
         gui_clu = gui_clu[gui_mask]
+        if mask-flows:
+            flows_times = flow_times[flows_mask]
+            flows_clu = flow_clu[flows_mask]
     else:
         gui_mask = None
+        flows_mask = None
 
     print("Reading templates for template similarity (if available)...")
     gui_templates, gui_spike_templates = _load_templates_and_spike_templates(gui_phy, spike_mask=gui_mask)
-    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(flow_phy)
+    flow_templates, flow_spike_templates = _load_templates_and_spike_templates(flow_phy, spike_mask=flows_mask)
 
     have_templates = (gui_templates is not None) and (flow_templates is not None)
     if not have_templates:
