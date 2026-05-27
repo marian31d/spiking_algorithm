@@ -9,7 +9,7 @@
 
 #include "Wall.h"
 #include "Wall_nm.h" 
-#include "Wsh.h"
+#include "Wrot.h"
 #include "wPCA.h"
 
 #define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
@@ -138,7 +138,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
     for (int w = 0; w < NCHAN; w++) {
         float sum = 0.0f; 
         for (int c = 0; c < NCHAN; c++) {
-            sum += sample->raw_data[h][c] * Wsh[w * NCHAN + c];
+            sum += sample->raw_data[h][c] * Wrot[w * NCHAN + c];
         }
         whitened_temp[w] = sum;
     }

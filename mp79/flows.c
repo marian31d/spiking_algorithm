@@ -7,7 +7,7 @@
 // Include array hearder files for configuration 
 #include "Wall.h"
 #include "Wall_nm.h" 
-#include "Wsh.h"
+#include "Wrot.h"
 #include "iir_weights.h"
 #include "wPCA.h"
 
@@ -136,7 +136,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
     for (int w = 0; w < NCHAN; w++) {
         float sum = 0.0f; 
         for (int c = 0; c < NCHAN; c++) {
-            sum += sample->raw_data[h][c] * Wsh[w * NCHAN + c];
+            sum += sample->raw_data[h][c] * Wrot[w * NCHAN + c];
         }
         whitened_temp[w] = sum;
     }
