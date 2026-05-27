@@ -227,29 +227,8 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshif
 
     Wrot = ops.get("Wrot", None)
 
-    # Extract dshift from ops, converting to numpy if needed
-    dshift = ops.get("dshift", None)
-    if dshift is not None:
-        if isinstance(dshift, torch.Tensor):
-            dshift = dshift.detach().cpu().numpy()
-        else:
-            dshift = np.asarray(dshift)
-
     if zero_dshift:
-        # Option tp zero out drift correction.
-        # Pass explicit zeros (not None) so BinaryFiltered applies zero shift
-        # per batch without recomputing drift from scratch.
-        if dshift is not None:
-            dshift = np.zeros_like(dshift)
-        else:
-            # ops had no dshift — compute n_batches from file size (tmax may be np.inf)
-            n_chan_bin = int(ops["settings"]["n_chan_bin"])
-            bytes_per_sample = 2  # int16
-            total_samples = os.path.getsize(str(bin_path)) // (n_chan_bin * bytes_per_sample)
-            online_start_sample = int(round(float(ops["settings"]["tmin"]) * float(ops["settings"]["fs"])))
-            n_batches_online = int(np.ceil((total_samples - online_start_sample) / float(ops["settings"]["batch_size"])))
-            dshift = np.zeros(n_batches_online, dtype=np.float32)
-        logger.info(f"[ONLINE] dshift zeroed ({len(dshift)} batches) — no drift correction applied.")
+        dshift = None
 
     bfile = BinaryFiltered(
         filename=str(bin_path),
@@ -270,15 +249,6 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshif
         tmin=float(tmin),
         tmax=float(tmax),
     )
-
-    # pad dshift to n_batches if needed (keeps shapes aligned) — offline only
-    if bfile.dshift is not None:
-        nb = int(bfile.n_batches)
-        ds = np.asarray(bfile.dshift).reshape(-1)
-        if len(ds) < nb:
-            pad = np.full(nb - len(ds), ds[-1], dtype=ds.dtype)
-            bfile.dshift = np.concatenate([ds, pad], axis=0)
-
     return bfile
 
 
