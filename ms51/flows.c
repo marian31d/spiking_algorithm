@@ -372,9 +372,9 @@ int main() {
 
     // 3. Format the file paths
     char times_file[256], temp_file[256], amp_file[256];
-    snprintf(times_file, sizeof(times_file), "%s/spike_times_iir.npy", results_dir);
-    snprintf(temp_file,  sizeof(temp_file),  "%s/spike_templates_iir.npy", results_dir);
-    snprintf(amp_file,   sizeof(amp_file),   "%s/amplitudes_iir.npy", results_dir);
+    snprintf(times_file, sizeof(times_file), "%s/spike_times.npy", results_dir);
+    snprintf(temp_file,  sizeof(temp_file),  "%s/spike_templates.npy", results_dir);
+    snprintf(amp_file,   sizeof(amp_file),   "%s/amplitudes.npy", results_dir);
 
     // 4. Save as .npy using Little-Endian NumPy types (<i8, <i4, <f8)
     save_npy(times_file, spike_times,     num_spikes, sizeof(int64_t), "<i8");
