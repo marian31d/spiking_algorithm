@@ -282,6 +282,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
     # Storing parameters for Soc
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     export_dir = os.path.join(results_dir, "export")
+    os.makedirs(export_dir, exist_ok=True)
     # ======================================================
     # SAVES DRIFT MATRIX & WHITENING
     # ======================================================
