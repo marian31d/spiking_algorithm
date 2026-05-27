@@ -22,9 +22,9 @@
 #define RING_MASK (RB - 1)
 #define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 
-#define NCHAN_BIN 135
-#define NCHAN 126      //ring buffer length prev 64
-#define NCLU 266        //Number of clusters, should be configured on the RAM
+#define NCHAN_BIN 63
+#define NCHAN 62      //ring buffer length prev 64
+#define NCLU 310        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 /*
@@ -299,8 +299,8 @@ void save_npy(const char* filename, void* data, size_t num_elements, size_t elem
 
 int main() {
 
-    char filename[] = "/data/mS51/dat/mS51_49/mS51_49.dat";
-    char results_dir[] = "/data/results/mS51_res/flows_c";
+    char filename[] = "/data/mDS2/dat/mDS2_02/mDS2_02.dat";
+    char results_dir[] = "/data/results/mds2_res/flows_c";
 
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");

@@ -296,9 +296,8 @@ void save_npy(const char* filename, void* data, size_t num_elements, size_t elem
 }
 
 int main() {
-
-    char filename[] = "/data/mS51/dat/mS51_49/mS51_49.dat";
-    char results_dir[] = "/data/results/mS51_res/flows_c";
+    char filename[] = "/data/mP79/dat/mP79_17/mP79_17.dat";
+    char results_dir[] = "/data/results/mP79_res/flows_c";
 
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");
