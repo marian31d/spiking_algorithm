@@ -100,8 +100,6 @@ int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
 
 int filter_sample(SampleBuffer *sample, uint32_t i){
     uint32_t h = sample->head;
-    uint32_t h1 = (h - 1) & RING_MASK;
-    uint32_t h2 = (h - 2) & RING_MASK;
 
     // 1. Filter each sample
     for (int c = 0; c < NCHAN; c++){    
@@ -204,7 +202,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
 
             // absolute_time: the template peak is at wPCA index 20, which is (nt-1-20)=40 samples
             // before the end of the window, so subtract 40 from the current absolute sample index
-            uint32_t peak_time = (i >= 42) ? (i - 41) : 0;  // i-1 for the lag, then -40 for template offset
+            uint32_t peak_time = (i >= 41) ? (i - 41) : 0;  // i-1 for the lag, then -40 for template offset
 
             float peak_cf   = prev_max_cf;
             float peak_dot  = prev_max_dot;
