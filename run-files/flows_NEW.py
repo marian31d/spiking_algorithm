@@ -349,10 +349,10 @@ def online_flow(bin_path: Path, probe_path: Path,
     # SIMULATE SoC HARDWARE CONSTRAINTS
     # ======================================================
     # 1. Lower Wrot Precision (4 digits after decimal point)
-    if 'Wrot' in ops:
+    """ if 'Wrot' in ops:
         precision = 10000
         ops['Wrot'] = torch.round(ops['Wrot'] * precision) / precision
-        print("[ONLINE] Wrot precision reduced to 4 decimal places.")
+        print("[ONLINE] Wrot precision reduced to 4 decimal places.") """
 
     # 2. Lower Nearest Channels (Reduce memory bandwidth)
     """ ops['settings']['nearest_chans'] = 8
