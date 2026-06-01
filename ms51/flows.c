@@ -329,6 +329,7 @@ int main() {
         Wall[0], Wall[1], wPCA[0]);
 //(nt+3)
     for (uint32_t i = 0; i <total_samples; i++) {
+        uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
             printf("last batch is too small");
@@ -340,7 +341,7 @@ int main() {
             break;
         }
         if (i < (nt - 1)) {continue;}
-        int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, i);
+        int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, abs_i);
         if (i % 100000 == 0) {
             printf("Processed %u batches... out of %u\n", i, (uint32_t)(binary_size));
         }
