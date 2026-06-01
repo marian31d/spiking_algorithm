@@ -21,7 +21,7 @@
 #define RB 128       //ring buffer length prev 64
 #define RING_MASK (RB - 1)
 #define NPCS 3
-#define NCLU 365        //Number of clusters, should be configured on the RAM
+#define NCLU 373        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 #define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 
@@ -315,9 +315,9 @@ int main() {
     SpikeEvent *spike_results = malloc(2 * binary_size * sizeof(SpikeEvent));
     if (!spike_results) { fprintf(stderr, "malloc failed\n"); return -1; } 
 
-    //uint64_t start_sample = 72000000;
-    //uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
-    //fseek(fptr, (long)byte_offset, SEEK_SET);
+    uint64_t start_sample = 72000000;
+    uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
+    fseek(fptr, (long)byte_offset, SEEK_SET);
 
     // Add temporarily in main, before the loop:
     printf("Wall_nm[0]=%f Wall_nm[1]=%f Wall_nm[2]=%f\n", 
