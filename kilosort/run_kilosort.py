@@ -335,21 +335,36 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
             gui_sorter.plotDataReady.emit('diagnostics')
         else:
             kplots.plot_diagnostics(Wall0, clu0, ops, results_dir)
-
+        ###########################################################
+        # Freeze: only use first hour spikes for final clustering/merging
+        freeze_sample = int(3600.0 * ops['settings']['fs'])
+        mask = st[:, 0] < freeze_sample
+        st_freeze = st[mask]
+        tF_freeze = tF[mask]
+        ###########################################################
         clu, Wall, st, tF = cluster_spikes(
-            st, tF, ops, device, bfile, tic0=tic0, progress_bar=progress_bar,
+            st_freeze, tF_freeze, ops, device, bfile, tic0=tic0, progress_bar=progress_bar,
             clear_cache=clear_cache, verbose=verbose_log,
             )
+        #################################################################################
+        # Re-run template matching on full recording with frozen Wall
+        # st[:,1] gives cluster assignment for every spike
+        logger.info('Re-extracting spikes on full recording with frozen templates...')
+        st, tF, ops = template_matching.extract(
+            ops, bfile, Wall, device=device, progress_bar=progress_bar
+        )
+        clu_full = st[:, 1].astype('int32')
 
         log_thread_count(logger)
 
         ops, similar_templates, is_ref, est_contam_rate, kept_spikes = \
             save_sorting(
-                ops, results_dir, st, clu, tF, Wall, bfile.imin, tic0,
+                ops, results_dir, st, clu_full, tF, Wall, bfile.imin, tic0,
                 save_extra_vars=save_extra_vars,
                 save_preprocessed_copy=save_preprocessed_copy,
                 skip_dat_path=(file_object is not None)
                 )
+        ################################################################################# 
         if torch.cuda.is_available():
             ops['cuda_postproc'] = torch.cuda.memory_stats(device)
 
@@ -357,11 +372,11 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
 
         logger.info('Generating spike position plot ...')
         if gui_sorter is not None:
-            gui_sorter.clu = clu[kept_spikes]
+            gui_sorter.clu = clu_full[kept_spikes]
             gui_sorter.is_refractory = is_ref
             gui_sorter.plotDataReady.emit('probe')
         else:
-            kplots.plot_spike_positions(clu[kept_spikes], is_ref, results_dir)
+            kplots.plot_spike_positions(clu_full[kept_spikes], is_ref, results_dir)
         logger.info('Sorting finished.')
         log_sorting_summary(ops, log=logger, level='info')
         
@@ -381,7 +396,7 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
         close_logger()
 
 
-    return ops, st, clu, tF, Wall, similar_templates, \
+    return ops, st, clu_full, tF, Wall, similar_templates, \
            is_ref, est_contam_rate, kept_spikes
 
 
@@ -809,6 +824,14 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
         ops, bfile, device=device, progress_bar=progress_bar,
         clear_cache=clear_cache, verbose=verbose
         )
+    #######################################################                
+    # Freeze: only use first hour for template learning
+    FREEZE_SEC = 3600.0
+    freeze_sample = int(FREEZE_SEC * ops['settings']['fs'])
+    mask = st0[:, 0] < freeze_sample
+    st0_freeze = st0[mask]
+    tF_freeze = torch.from_numpy(tF[mask])
+    #######################################################
     tF = torch.from_numpy(tF)
 
     elapsed = time.time() - tic
@@ -832,7 +855,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
     logger.info('First clustering')
     logger.info('-'*40)
     clu, Wall = clustering_qr.run(
-        ops, st0, tF, mode='spikes', device=device, progress_bar=progress_bar,
+        ops, st0_freeze, tF_freeze, mode='spikes', device=device, progress_bar=progress_bar,
         clear_cache=clear_cache, verbose=verbose
         )
     Wall3 = template_matching.postprocess_templates(
