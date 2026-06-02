@@ -337,6 +337,14 @@ int main() {
             printf("Error while filtering batch %d\n", i);
             break;
         }
+        // DEBUG: export last 100 preprocessed samples
+        if (i >= total_samples - 100) {
+            uint32_t abs_i = i + (uint32_t)start_sample;
+            for (int c = 0; c < NCHAN; c++) {
+                printf("SAMPLE %u CHAN %d: %f\n", abs_i, c,
+                    sample.raw_data[sample.head][c]);
+            }
+        }
         if (i < (nt - 1)) {continue;}
         int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, abs_i);
         if (i % 100000 == 0) {
