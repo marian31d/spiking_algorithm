@@ -314,13 +314,14 @@ int main() {
     num_spikes = 0;
     memset(&sample.raw_data, 0, sizeof(sample.raw_data));
 
-    uint32_t    binary_size = (uint32_t)total_samples;
+    uint64_t start_sample = 72000000;
+    uint64_t samples_to_process = total_samples - start_sample;
+    uint32_t binary_size = (uint32_t)samples_to_process;
     SpikeEvent *spike_results = malloc(2 * binary_size * sizeof(SpikeEvent));
     if (!spike_results) { fprintf(stderr, "malloc failed\n"); return -1; } 
 
-    uint64_t start_sample = 72000000;
     uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
-    fseek(fptr, (long)byte_offset, SEEK_SET);
+    fseeko(fptr, (off_t)byte_offset, SEEK_SET);
 
     // Add temporarily in main, before the loop:
     printf("Wall_nm[0]=%f Wall_nm[1]=%f Wall_nm[2]=%f\n", 
@@ -328,7 +329,7 @@ int main() {
     printf("Wall[0]=%f Wall[1]=%f wPCA[0]=%f\n",
         Wall[0], Wall[1], wPCA[0]);
 //(nt+3)
-    for (uint32_t i = 0; i <total_samples; i++) {
+    for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
