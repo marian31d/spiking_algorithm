@@ -301,10 +301,10 @@ int main() {
     if (!fptr) { fprintf(stderr, "Error opening binary file\n"); return -1; }
 
     // Compute total sample count from file size
-    fseek(fptr, 0, SEEK_END);
-    uint64_t file_bytes  = (uint64_t)ftell(fptr);
+    fseeko(fptr, 0, SEEK_END);
+    uint64_t file_bytes = (uint64_t)ftello(fptr);
     uint64_t total_samples = file_bytes / (NCHAN_BIN * sizeof(int16_t));
-    fseek(fptr, 0, SEEK_SET);
+    fseeko(fptr, 0, SEEK_SET);
     
     sample.head = 0;
     num_spikes = 0;
