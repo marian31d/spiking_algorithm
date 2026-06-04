@@ -321,7 +321,7 @@ int main() {
     if (!spike_results) { fprintf(stderr, "malloc failed\n"); return -1; } 
 
     uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
-    fseeko(fptr, (off_t)byte_offset, SEEK_SET);
+    fseeko(fptr, (int64_t)byte_offset, SEEK_SET);
 
     // Add temporarily in main, before the loop:
     printf("Wall_nm[0]=%f Wall_nm[1]=%f Wall_nm[2]=%f\n", 
