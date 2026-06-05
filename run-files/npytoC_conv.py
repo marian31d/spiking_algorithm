@@ -73,9 +73,9 @@ def get_iir_weights(result_dir):
 def main():
     # --- 1. Set your directory ---
     #
-    export_dir = "/data/results/mds2_res/flows_final_shift/batch-def/offline_3600/export"
-    offline_dir = "/data/results/mds2_res/flows_final_shift/batch-def/offline_3600"
-    result_dir = "/data/results/mS51_res/spiking_algorithm/mds2"
+    export_dir = "/data/results/mP79_res/flows_final_shift/zero_dshift/gui-online/export"
+    offline_dir = "/data/results/mP79_res/flows_final_shift/zero_dshift/gui-online/"
+    result_dir = "/data/spiking_algorithm/mp79"
 
     # --- 2. Load Wall (Templates) ---
     Wall_np = np.load(os.path.join(export_dir, "Wall.npy"))
@@ -120,12 +120,8 @@ def main():
         write_c_float_header(Wsh, "Wsh", Wsh_h)
     else:
         print("Wsh not found in directory.")
-    # --- 9. Get template cross correlation (ctc) --- 
-    ctc = np.load(os.path.join(export_dir, "ctc.npy"))
-    ctc_h = os.path.join(result_dir, "ctc.h")
-    #write_c_float_header(ctc, "ctc", ctc_h)
 
-    # --- 10. Get IIR filter weights 
+    # --- 9. Get IIR filter weights 
     get_iir_weights(result_dir)
 
 if __name__ == "__main__":
