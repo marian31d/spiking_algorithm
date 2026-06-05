@@ -215,7 +215,7 @@ def write_offline_stats(results_dir: Path, Wall: torch.Tensor, st: np.ndarray, H
     logger.info(f"[OFFLINE-STATS] Wrote offline_stats.txt/json into {results_dir}")
 
 
-def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshift=True):
+def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, dshift=None):
     s = ops["settings"]
     nchan = int(s["n_chan_bin"])
     fs = float(s["fs"])
@@ -227,8 +227,6 @@ def build_bfile_from_ops(bin_path, probe, ops, tmin=0.0, tmax=np.inf, zero_dshif
 
     Wrot = ops.get("Wrot", None)
 
-    if zero_dshift:
-        dshift = None
 
     bfile = BinaryFiltered(
         filename=str(bin_path),
@@ -279,7 +277,7 @@ def offline_flow(bin_path: Path, probe_path: Path, out_dir: Path,
                    SAVE_PREPROCESSED_COPY, VERBOSE_LOG, SAVE_EXTRA_VARS, file_object=None, progress_bar=None, gui_sorter=None)
                    
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # Storing parameters for Soc
+    # Exports for Soc
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     export_dir = os.path.join(results_dir, "export")
     os.makedirs(export_dir, exist_ok=True)
@@ -348,17 +346,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     # ======================================================
     # SIMULATE SoC HARDWARE CONSTRAINTS
     # ======================================================
-    # 1. Lower Wrot Precision (4 digits after decimal point)
-    """ if 'Wrot' in ops:
-        precision = 10000
-        ops['Wrot'] = torch.round(ops['Wrot'] * precision) / precision
-        print("[ONLINE] Wrot precision reduced to 4 decimal places.") """
-
-    # 2. Lower Nearest Channels (Reduce memory bandwidth)
-    """ ops['settings']['nearest_chans'] = 8
-    ops['nearest_chans'] = 8 """  # Sync root
-
-    # 3. Limit Matching Pursuit Iterations (Peels) for real-time logic
+    # Limit Matching Pursuit Iterations (Peels) for real-time logic
     ops['settings']['max_peels'] = 2
     ops['max_peels'] = 2
 
@@ -368,10 +356,19 @@ def online_flow(bin_path: Path, probe_path: Path,
     ops['settings']['tmax'] = float(np.inf)
     ops['tmax'] = float(np.inf)   # Sync root
 
+    #=====================================================
+    #FOR DEBUGGING PURPOSES
+    batch_size = int(ops['settings']['batch_size'])   # 60000
+    fs = float(ops['settings']['fs'])
+    batch_offset = int(round(HOUR_SEC * fs)) // batch_size   # 72000000 // 60000 = 1200
+    dshift_online = ops['dshift'][batch_offset:]    
+    print(len(ops['dshift']), batch_offset, len(dshift_online))
+    #=====================================================
     # Build binary file object
-    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf), zero_dshift=True)
+    bfile_rest = build_bfile_from_ops(bin_path, probe, ops, tmin=float(HOUR_SEC), tmax=float(np.inf), dshift=dshift_online)
 
     # ======================================================
+    # PREPARE Wall FOR TEMPLATE MATCHING
     n_pcs = int(ops["settings"]["n_pcs"])
     if Wall.shape[1] == n_pcs:
         Wall_match = Wall
@@ -396,25 +393,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     spike_times = st_abs[:, 0].astype(np.int64, copy=False)
     spike_templates = st_abs[:, 1].astype(np.int64, copy=False)
 
-    # ======================================================
-    # Option: MAP TEMPLATES TO FINAL GUI CLUSTERS
-    # ======================================================
-    # This ensures F1/Precision matches by accounting for GUI merges
-    mapping_path = offline_dir / "spike_clusters.npy"
-    template_idx_path = offline_dir / "spike_templates.npy"
-
-    if mapping_path.exists() and template_idx_path.exists():
-        #logger.info("[ONLINE] Applying Template-to-Cluster mapping from offline results...")
-        #off_templates = np.load(template_idx_path).reshape(-1)
-        #off_clusters = np.load(mapping_path).reshape(-1)
-
-        # Build map: Template ID -> Final Cluster ID
-        #t_to_c = {int(t): int(c) for t, c in zip(off_templates, off_clusters)}
-        #spike_clusters = np.array([t_to_c.get(int(t), int(t)) for t in spike_templates])
-        spike_clusters = spike_templates.copy()
-    else:
-        print("[ONLINE] Cluster mapping not found; using cluster = template.")
-        spike_clusters = spike_templates
+    spike_clusters = spike_templates.copy()
 
     # ======================================================
     # FIX: AUTOMATIC LABEL AND METADATA COPYING
@@ -438,6 +417,47 @@ def online_flow(bin_path: Path, probe_path: Path,
         shutil.copy(offline_dir / "templates.npy", out_dir / "templates.npy")
 
     save_ops(ops, results_dir=out_dir)
+
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # Exports for Soc
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    export_dir = os.path.join(out_dir, "export")
+    os.makedirs(export_dir, exist_ok=True)
+    print(f"[ONLINE] STORING EXPORTS FOR SOC IN {export_dir}")
+    # ======================================================
+    # SAVES DRIFT MATRIX & WHITENING
+    # ======================================================
+    # Calculate the median drift across all batches
+    stable_drift_state = np.median(ops['dshift'][:batch_offset] , axis=0)
+    M = get_drift_matrix(ops, stable_drift_state, device=torch.device('cuda'))
+    Wrot = ops['Wrot']
+    Wsh = (M @ Wrot)
+    Wsh_np = Wsh.detach().cpu().numpy() if torch.is_tensor(Wsh) else Wsh
+    np.save(os.path.join(export_dir, "Wsh"), Wsh_np)
+    Wrot_np = Wrot.detach().cpu().numpy() if torch.is_tensor(Wrot) else Wrot
+    np.save(os.path.join(export_dir, "Wrot"), Wrot_np)              
+    print(f"[ONLINE] Wsh and Wrot matrices saved with shape {Wsh_np.shape}")
+    # ======================================================
+    # EXPORT wPCA FOR BARE-METAL C
+    # ======================================================
+    wPCA_tensor = ops.get('wPCA', None)
+    if wPCA_tensor is not None:
+        wPCA_np = wPCA_tensor.detach().cpu().numpy() if torch.is_tensor(wPCA_tensor) else wPCA_tensor
+        np.save(os.path.join(export_dir, "wPCA.npy"), wPCA_np)
+        print(f"[ONLINE] Exported wPCA master shapes for C hardware: {wPCA_np.shape}")
+    # ======================================================
+    # EXPORT Wall AND NM FOR BARE-METAL C
+    # ======================================================
+    Wall_np = Wall.detach().cpu().numpy() if torch.is_tensor(Wall) else Wall
+    np.save(os.path.join(out_dir, "Wall.npy"), Wall_np)
+    np.save(os.path.join(export_dir, "Wall.npy"), Wall_np)
+    nm = (Wall ** 2).sum(axis=-1).sum(axis=-1)
+    np.save(os.path.join(export_dir, "Wall_nm.npy"), nm.detach().cpu().numpy().astype(np.float32))
+    print(f"[ONLINE] Exported Wall templates: {Wall.shape} and nm: {nm.shape}")
+
+    logger.info("EXPORTS WRITTEN FOR SOC HARDWARE SIMULATION.")
+    #======================================================
+
     print("[ONLINE] Online Phase Complete.")
     return
 
@@ -464,7 +484,7 @@ def main():
   DATA_DTYPE = 'int16'
   DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-  offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
+  #offline_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), args.fs, args.nchan, args.HOUR_SEC)
   online_flow(Path(args.bin), Path(args.probe), Path(args.out_offline), Path(args.out_online), args.HOUR_SEC)
 
 if __name__ == "__main__":
