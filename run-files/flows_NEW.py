@@ -421,14 +421,14 @@ def online_flow(bin_path: Path, probe_path: Path,
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # Exports for Soc
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    export_dir = os.path.join(results_dir, "export")
+    export_dir = os.path.join(out_dir, "export")
     os.makedirs(export_dir, exist_ok=True)
     print(f"[ONLINE] STORING EXPORTS FOR SOC IN {export_dir}")
     # ======================================================
     # SAVES DRIFT MATRIX & WHITENING
     # ======================================================
     # Calculate the median drift across all batches
-    stable_drift_state = np.median(ops['dshift'], axis=0)
+    stable_drift_state = np.median(ops['dshift'][:batch_offset] , axis=0)
     M = get_drift_matrix(ops, stable_drift_state, device=torch.device('cuda'))
     Wrot = ops['Wrot']
     Wsh = (M @ Wrot)
@@ -449,7 +449,7 @@ def online_flow(bin_path: Path, probe_path: Path,
     # EXPORT Wall AND NM FOR BARE-METAL C
     # ======================================================
     Wall_np = Wall.detach().cpu().numpy() if torch.is_tensor(Wall) else Wall
-    np.save(os.path.join(results_dir, "Wall.npy"), Wall_np)
+    np.save(os.path.join(out_dir, "Wall.npy"), Wall_np)
     np.save(os.path.join(export_dir, "Wall.npy"), Wall_np)
     nm = (Wall ** 2).sum(axis=-1).sum(axis=-1)
     np.save(os.path.join(export_dir, "Wall_nm.npy"), nm.detach().cpu().numpy().astype(np.float32))
