@@ -384,7 +384,7 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
 
         logger.info('Generating spike position plot ...')
         if gui_sorter is not None:
-            gui_sorter.clu = clu[kept_spikes] #change clu to clu_full
+            gui_sorter.clu = clu_full[kept_spikes] #change clu to clu_full
             gui_sorter.is_refractory = is_ref
             gui_sorter.plotDataReady.emit('probe')
         else:
