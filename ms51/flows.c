@@ -24,7 +24,7 @@
 
 #define NCHAN_BIN 135
 #define NCHAN 126      
-#define NCLU 289        //Number of clusters, should be configured on the RAM
+#define NCLU 173        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 /*
