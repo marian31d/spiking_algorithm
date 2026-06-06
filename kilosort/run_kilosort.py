@@ -343,23 +343,35 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
         tF_freeze = tF[mask]
         ###########################################################
         clu, Wall, st, tF = cluster_spikes(
-            st_freeze, tF_freeze, ops, device, bfile, tic0=tic0, progress_bar=progress_bar,
+            st_freeze, tF_freeze, ops, device, bfile, tic0=tic0, progress_bar=progress_bar,   #change tF and st to frozen ones
             clear_cache=clear_cache, verbose=verbose_log,
             )
         #################################################################################
         # Re-run template matching on full recording with frozen Wall
         # st[:,1] gives cluster assignment for every spike
         logger.info('Re-extracting spikes on full recording with frozen templates...')
+        Wall = Wall.to(device)  # ensure Wall is on the correct device
+
+        # permute from (n_clusters, n_chans, n_pcs) to (n_clusters, n_pcs, n_chans)
+        n_pcs = int(ops['settings']['n_pcs'])
+        if Wall.shape[1] != n_pcs:
+            Wall_match = Wall.permute(0, 2, 1).contiguous()
+        else:
+            Wall_match = Wall
+
         st, tF, ops = template_matching.extract(
-            ops, bfile, Wall, device=device, progress_bar=progress_bar
+            ops, bfile, Wall_match, device=device, progress_bar=progress_bar
         )
         clu_full = st[:, 1].astype('int32')
 
-        log_thread_count(logger)
+        Wall_np = Wall.detach().cpu().numpy() if torch.is_tensor(Wall) else Wall
+        np.save(os.path.join(results_dir, "Wall.npy"), Wall_np)
 
+        log_thread_count(logger)
+        #################################################################################
         ops, similar_templates, is_ref, est_contam_rate, kept_spikes = \
             save_sorting(
-                ops, results_dir, st, clu_full, tF, Wall, bfile.imin, tic0,
+                ops, results_dir, st, clu_full, tF, Wall, bfile.imin, tic0,  #change clu to clu_full
                 save_extra_vars=save_extra_vars,
                 save_preprocessed_copy=save_preprocessed_copy,
                 skip_dat_path=(file_object is not None)
@@ -372,11 +384,11 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
 
         logger.info('Generating spike position plot ...')
         if gui_sorter is not None:
-            gui_sorter.clu = clu_full[kept_spikes]
+            gui_sorter.clu = clu_full[kept_spikes] #change clu to clu_full
             gui_sorter.is_refractory = is_ref
             gui_sorter.plotDataReady.emit('probe')
         else:
-            kplots.plot_spike_positions(clu_full[kept_spikes], is_ref, results_dir)
+            kplots.plot_spike_positions(clu_full[kept_spikes], is_ref, results_dir)  #change clu to clu_full
         logger.info('Sorting finished.')
         log_sorting_summary(ops, log=logger, level='info')
         
@@ -395,7 +407,7 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
     finally:
         close_logger()
 
-
+    #change clu to clu_full
     return ops, st, clu_full, tF, Wall, similar_templates, \
            is_ref, est_contam_rate, kept_spikes
 
@@ -855,11 +867,11 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
     logger.info('First clustering')
     logger.info('-'*40)
     clu, Wall = clustering_qr.run(
-        ops, st0_freeze, tF_freeze, mode='spikes', device=device, progress_bar=progress_bar,
+        ops, st0_freeze, tF_freeze, mode='spikes', device=device, progress_bar=progress_bar,  #revert st and tf to frozen ones
         clear_cache=clear_cache, verbose=verbose
         )
     Wall3 = template_matching.postprocess_templates(
-        Wall, ops, clu, st0, tF, device=device
+        Wall, ops, clu, st0_freeze, tF_freeze, device=device
         )
 
     elapsed = time.time() - tic
