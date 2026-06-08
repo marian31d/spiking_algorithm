@@ -9,7 +9,7 @@
 
 #include "Wall.h"
 #include "Wall_nm.h" 
-#include "Wrot.h"
+#include "Wsh.h"
 #include "wPCA.h"
 
 #define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
@@ -24,7 +24,7 @@
 
 #define NCHAN_BIN 63
 #define NCHAN 62      //ring buffer length prev 64
-#define NCLU 310        //Number of clusters, should be configured on the RAM
+#define NCLU 232        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 /*
@@ -136,7 +136,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
     for (int w = 0; w < NCHAN; w++) {
         float sum = 0.0f; 
         for (int c = 0; c < NCHAN; c++) {
-            sum += sample->raw_data[h][c] * Wrot[w * NCHAN + c];
+            sum += sample->raw_data[h][c] * Wsh[w * NCHAN + c];
         }
         whitened_temp[w] = sum;
     }
