@@ -73,9 +73,9 @@ def get_iir_weights(result_dir):
 def main():
     # --- 1. Set your directory ---
     #
-    export_dir = "/data/results/mP79_res/flows_final_shift/zero_dshift/gui-online/export"
-    offline_dir = "/data/results/mP79_res/flows_final_shift/zero_dshift/gui-online/"
-    result_dir = "/data/spiking_algorithm/mp79"
+    export_dir = "/data/results/mds2_res/flows_final_shift/updated_dshift/gui-online-shift/export"
+    offline_dir = "/data/results/mds2_res/flows_final_shift/updated_dshift/gui-online-shift"
+    result_dir = "/data/spiking_algorithm/mds2"
 
     # --- 2. Load Wall (Templates) ---
     Wall_np = np.load(os.path.join(export_dir, "Wall.npy"))
@@ -120,6 +120,14 @@ def main():
         write_c_float_header(Wsh, "Wsh", Wsh_h)
     else:
         print("Wsh not found in directory.")
+
+    # --- 8b. Export per-batch Wsh stack for full drift ---
+    Wsh_pb = np.load(os.path.join(export_dir, "Wsh_per_batch.npy"))
+    # shape (n_online_batches, NCHAN, NCHAN)
+    n_batches = Wsh_pb.shape[0]
+    print(f"Wsh_per_batch shape: {Wsh_pb.shape} -> {n_batches} batches")
+    Wsh_pb_h = os.path.join(result_dir, "Wsh_per_batch.h")
+    write_c_float_header(Wsh_pb.astype(np.float32), "Wsh_per_batch", Wsh_pb_h)
 
     # --- 9. Get IIR filter weights 
     get_iir_weights(result_dir)
