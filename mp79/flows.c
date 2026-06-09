@@ -49,9 +49,11 @@ typedef struct {
 static SampleBuffer sample;
 static uint32_t num_spikes = 0;
 
-static float prev_max_cf    = 0.0f;   // Cf = relu(dot)^2 / nm  (for threshold)
-static float prev_max_dot   = 0.0f;   // raw dot product         (for amp = dot/nm)
-static int   prev_best_t_id = -1;
+static float    cand_cf  = 0.0f, cand_dot = 0.0f;
+static int      cand_tid = -1;
+static uint32_t cand_i   = 0;     // absolute sample index where candidate peaked
+static int      since    = 0;     // samples since candidate was set
+#define PEAK_CONFIRM 3            // confirmation window in samples
 
 //filter history variables - should be located in TCM for speed
 static float iir_x1[NCHAN];  // x[n-1] raw input
@@ -196,20 +198,25 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         get_max_score_at_time(sample, sample->head, &current_cf, &current_dot, &current_t_id);
 
         //printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
-
+        if (current_cf > cand_cf) {
+                // higher than current candidate -> this becomes the new candidate
+                cand_cf  = current_cf;
+                cand_dot = current_dot;
+                cand_tid = current_t_id;
+                cand_i   = i;
+                since    = 0;
+                return 0;
+            }
+        since++;
         // --- PEAK DETECTION & PEELING PHASE ---
-        if (prev_max_cf > TH_LEARNED_SQ && prev_max_cf > current_cf) {
+        if (cand_cf > TH_LEARNED_SQ && since >= PEAK_CONFIRM) {
 
-            // peak_head is the ring buffer position one step ago, where the actual spike peak sits
-            uint32_t peak_head = (sample->head - 1) & RING_MASK;
+            uint32_t peak_head = (sample->head - (since)) & RING_MASK;  // ring pos of the candidate peak
+            uint32_t peak_time = (cand_i >= 41) ? (cand_i - 41) : 0;
 
-            // absolute_time: the template peak is at wPCA index 20, which is (nt-1-20)=40 samples
-            // before the end of the window, so subtract 40 from the current absolute sample index
-            uint32_t peak_time = (i >= 41) ? (i - 41) : 0;  // i-1 for the lag, then -40 for template offset
-
-            float peak_cf   = prev_max_cf;
-            float peak_dot  = prev_max_dot;
-            int   best_t_id = prev_best_t_id;
+            float peak_cf   = cand_cf;
+            float peak_dot  = cand_dot;
+            int   best_t_id = cand_tid;
             // --- ORIGINAL PEELING LOOP ---
             for(int iter = 0; iter < MAX_PEELS; iter++) {
                 
@@ -243,17 +250,10 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                 if (peak_cf <= TH_LEARNED_SQ) break;
 
             } // end iter loop
-        // set the previous max to the peeled current max cause that's the closes peeled score we can get without forcing an off time for next spike
-        prev_max_cf    = 0.0f;//peak_cf;
-        prev_max_dot   = 0.0f;//peak_dot;
-        prev_best_t_id = -1;//best_t_id;
+        // reset candidate
+        cand_cf = 0.0f; cand_dot = 0.0f; cand_tid = -1; since = 0;
         return 0;
         }
-    // --- TRACKING PHASE ---
-    // If we haven't hit a peak yet, save the current score for the next loop iteration
-    prev_max_cf = current_cf;
-    prev_max_dot = current_dot;
-    prev_best_t_id = current_t_id;
     return(0);
 }
 
