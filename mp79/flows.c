@@ -7,7 +7,7 @@
 // Include array hearder files for configuration 
 #include "Wall.h"
 #include "Wall_nm.h" 
-#include "Wsh.h"
+#include "Wsh_per_batch.h"
 #include "iir_weights.h"
 #include "wPCA.h"
 
