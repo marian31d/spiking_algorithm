@@ -195,11 +195,15 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         float current_cf, current_dot;
         int   current_t_id;
 
+        static int armed = 1;
         // --- SCANNING PHASE ---
         // 1. Calculate the score for the current microsecond
         get_max_score_at_time(sample, sample->head, &current_cf, &current_dot, &current_t_id);
 
         //printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
+        if (current_cf <= TH_LEARNED_SQ) {
+            armed = 1;
+        }
         if (current_cf > cand_cf) {
                 // higher than current candidate -> this becomes the new candidate
                 cand_cf  = current_cf;
@@ -211,7 +215,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
             }
         since++;
         // --- PEAK DETECTION & PEELING PHASE ---
-        if (cand_cf > TH_LEARNED_SQ && since >= PEAK_CONFIRM) {
+        if (armed && cand_cf > TH_LEARNED_SQ && since >= PEAK_CONFIRM) {
 
             uint32_t peak_head = (sample->head - (since)) & RING_MASK;  // ring pos of the candidate peak
             uint32_t peak_time = (cand_i >= 41) ? (cand_i - 41) : 0;
@@ -253,7 +257,8 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
 
             } // end iter loop
         // reset candidate
-        cand_cf = 0.0f; cand_dot = 0.0f; cand_tid = -1; since = 0;
+        armed = 0;                 // block further commits until score drops below Th
+        cand_cf = 0.0f; cand_tid = -1; since = 0;
         return 0;
         }
     return(0);
