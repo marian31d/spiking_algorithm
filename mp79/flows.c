@@ -54,6 +54,9 @@ static int      cand_tid = -1;
 static uint32_t cand_i   = 0;     // absolute sample index where candidate peaked
 static int      since    = 0;     // samples since candidate was set
 #define PEAK_CONFIRM 3            // confirmation window in samples
+//
+static uint64_t above_th  = 0;
+static uint64_t total_eval = 0;
 
 //filter history variables - should be located in TCM for speed
 static float iir_x1[NCHAN];  // x[n-1] raw input
@@ -197,6 +200,10 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         // --- SCANNING PHASE ---
         // 1. Calculate the score for the current microsecond
         get_max_score_at_time(sample, sample->head, &current_cf, &current_dot, &current_t_id);
+
+        // --- DIAGNOSTIC: how often is the score above threshold? ---
+        total_eval++;
+        if (current_cf > TH_LEARNED_SQ) above_th++;
 
         //printf("Time index %u | Max Score: %f (Template %d)\n", i, current_dot, current_t_id);
         if (current_cf <= TH_LEARNED_SQ) {
@@ -364,7 +371,11 @@ int main() {
     // ---------- END OF BATCH PROCESSING LOOP ----------
     
     printf("Processing complete. Detected %u spikes.\nSaving results in Kilosort format...\n", num_spikes);
-    
+    printf("DIAGNOSTIC: %llu / %llu samples above threshold = %.2f%%\n",
+           (unsigned long long)above_th,
+           (unsigned long long)total_eval,
+           100.0 * (double)above_th / (double)total_eval);
+           
     // 1. Allocate flat arrays for Kilosort output types
     // Note: Kilosort prefers int64 for time, int32 for templates, and float64 for amplitudes
     int64_t *spike_times    = (int64_t *)malloc(num_spikes * sizeof(int64_t));
