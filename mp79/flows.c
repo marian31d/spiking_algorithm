@@ -24,6 +24,7 @@
 #define NCLU 131        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 #define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
+#define BATCH_SIZE 60000
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -98,7 +99,7 @@ int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
     return 0; // Success! Reached the end of the 61 rows normally.
 }
 
-int filter_sample(SampleBuffer *sample, uint32_t i){
+int filter_sample(SampleBuffer *sample, uint32_t i) {
     uint32_t h = sample->head;
 
     // 1. Filter each sample
@@ -130,11 +131,13 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
     }
 
     // 3. Whitening
+    int batch_idx = i / BATCH_SIZE; //debug: dshift for all batches
+    const float *Wsh_curr = &Wsh_per_batch[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
     float whitened_temp[NCHAN];
     for (int w = 0; w < NCHAN; w++) {
         float sum = 0.0f; 
         for (int c = 0; c < NCHAN; c++) {
-            sum += sample->raw_data[h][c] * Wsh[w * NCHAN + c];
+            sum += sample->raw_data[h][c] * Wsh_curr[w * NCHAN + c];
         }
         whitened_temp[w] = sum;
     }
@@ -184,7 +187,7 @@ static inline void get_max_score_at_time(SampleBuffer *sample, uint32_t ring_hea
     }
 }
 
-int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *spike_count, uint32_t *batch_size, int match, uint32_t i){
+int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i){
         float current_cf, current_dot;
         int   current_t_id;
 
@@ -211,7 +214,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
             for(int iter = 0; iter < MAX_PEELS; iter++) {
                 
                 // 1. Record the Spike (using the peak time)
-                if(*spike_count < 2*(*batch_size)){
+                if(*spike_count < 2*(*data_size)){
                     spike_results[*spike_count].absolute_time = peak_time;
                     spike_results[*spike_count].template_id = best_t_id;
                     spike_results[*spike_count].score = peak_dot / Wall_nm[best_t_id];;
