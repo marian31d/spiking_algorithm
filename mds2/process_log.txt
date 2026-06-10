@@ -1,6 +1,6 @@
 Reading data from /data/mDS2/dat/mDS2_02/mDS2_02.dat...
-Wall_nm[0]=417.004944 Wall_nm[1]=3182.302490 Wall_nm[2]=429.597076
-Wall[0]=-5.700983 Wall[1]=-8.977654 wPCA[0]=0.121951
+Wall_nm[0]=252.123520 Wall_nm[1]=168.105682 Wall_nm[2]=151.718582
+Wall[0]=-4.024756 Wall[1]=-11.541359 wPCA[0]=0.052541
 Processed 100000 batches... out of 240234400
 Processed 200000 batches... out of 240234400
 Processed 300000 batches... out of 240234400
@@ -2403,9 +2403,9 @@ Processed 239900000 batches... out of 240234400
 Processed 240000000 batches... out of 240234400
 Processed 240100000 batches... out of 240234400
 Processed 240200000 batches... out of 240234400
-Processing complete. Detected 50264850 spikes.
+Processing complete. Detected 41413911 spikes.
 Saving results in Kilosort format...
-Saved 50264850 spikes to /data/results/mds2_res/flows_c/spike_times.npy
-Saved 50264850 spikes to /data/results/mds2_res/flows_c/spike_templates.npy
-Saved 50264850 spikes to /data/results/mds2_res/flows_c/amplitudes.npy
+Saved 41413911 spikes to /data/results/mds2_res/flows_c/spike_times.npy
+Saved 41413911 spikes to /data/results/mds2_res/flows_c/spike_templates.npy
+Saved 41413911 spikes to /data/results/mds2_res/flows_c/amplitudes.npy
 Done!
