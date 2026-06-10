@@ -165,7 +165,7 @@ static inline void get_max_score_at_time(SampleBuffer *sample, uint32_t ring_hea
             float score = 0;
             #pragma GCC unroll 61
             for(int s = 0; s < nt; s++){
-                score += sample->raw_data[(ring_head - (nt - 1 - s)) & RING_MASK][c] * wPCA[p * nt + s];
+                score += sample->raw_data[(ring_head - (nt - 1 - s)) & RING_MASK][c] * wPCA[p * nt + (nt - 1 - s)];
             }
             pc_scores[c][p] = score;
         }
@@ -247,7 +247,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                     for (int ts = 0; ts < nt; ts++) {
                         float reconstructed = 0.0f;
                         for (int p = 0; p < NPCS; p++)
-                            reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + ts];
+                            reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + (nt - 1 - ts)];
                         reconstructed *= amp;
                         //printf("Subtracting from channel %d at time index %u (original value: %f, subtracted value: %f, after subtraction: %f)\n", c, (peak_head - (nt-1-ts)) & RING_MASK, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c], reconstructed, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] - reconstructed);
                         sample->raw_data[(peak_head - (nt - 1 - ts)) & RING_MASK][c] -= reconstructed;
