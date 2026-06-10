@@ -22,9 +22,10 @@
 #define RING_MASK (RB - 1)
 #define NPCS 3
 #define NCLU 131        //Number of clusters, should be configured on the RAM
-#define TH_LEARNED_SQ 64.00    //check if it's constant
+#define TH_LEARNED_SQ 81.00    //check if it's constant
 #define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
+#define PEAK_CONFIRM 3            // confirmation window in samples
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -53,7 +54,6 @@ static float    cand_cf  = 0.0f, cand_dot = 0.0f;
 static int      cand_tid = -1;
 static uint32_t cand_i   = 0;     // absolute sample index where candidate peaked
 static int      since    = 0;     // samples since candidate was set
-#define PEAK_CONFIRM 3            // confirmation window in samples
 //
 static uint64_t above_th  = 0;
 static uint64_t total_eval = 0;
@@ -184,6 +184,7 @@ static inline void get_max_score_at_time(SampleBuffer *sample, uint32_t ring_hea
             }
         }
         float cf = (RELU(dot) * RELU(dot)) / Wall_nm[t];
+        //if(t==113) printf("DEBUG: Template %d has cf %f\n", t, cf);
         if (cf > *out_max_cf) {
             *out_max_cf    = cf;
             *out_max_dot   = dot;
@@ -200,7 +201,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         // --- SCANNING PHASE ---
         // 1. Calculate the score for the current microsecond
         get_max_score_at_time(sample, sample->head, &current_cf, &current_dot, &current_t_id);
-
+        //printf("DEBUG: At time %u, winning template %d with cf %f\n", i, current_t_id, current_cf);
         // --- DIAGNOSTIC: how often is the score above threshold? ---
         total_eval++;
         if (current_cf > TH_LEARNED_SQ) above_th++;
@@ -340,7 +341,7 @@ int main() {
         Wall_nm[0], Wall_nm[1], Wall_nm[2]);
     printf("Wall[0]=%f Wall[1]=%f wPCA[0]=%f\n",
         Wall[0], Wall[1], wPCA[0]);
-//(nt+3)
+
     for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
         int r_ret = dma_read_block(fptr, i, &sample);
