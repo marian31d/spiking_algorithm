@@ -23,7 +23,7 @@
 #define NPCS 3
 #define NCLU 131        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
-#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
+#define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
 
 /*
@@ -165,7 +165,7 @@ static inline void get_max_score_at_time(SampleBuffer *sample, uint32_t ring_hea
             float score = 0;
             #pragma GCC unroll 61
             for(int s = 0; s < nt; s++){
-                score += sample->raw_data[(ring_head - (nt - 1 - s)) & RING_MASK][c] * wPCA[p * nt + (nt - 1 - s)];
+                score += sample->raw_data[(ring_head - (nt - 1 - s)) & RING_MASK][c] * wPCA[p*nt + (nt-1-s)];
             }
             pc_scores[c][p] = score;
         }
@@ -235,7 +235,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                 if(*spike_count < 2*(*data_size)){
                     spike_results[*spike_count].absolute_time = peak_time;
                     spike_results[*spike_count].template_id = best_t_id;
-                    spike_results[*spike_count].score = peak_dot / Wall_nm[best_t_id];;
+                    spike_results[*spike_count].score = iter;//peak_dot / Wall_nm[best_t_id];
                     (*spike_count)++;
                     //printf("spike detected at time %u with template %d and score %f iter No. %d.\n", peak_time, best_t_id, spike_results[*spike_count-1].score, iter);
                 }
@@ -247,7 +247,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                     for (int ts = 0; ts < nt; ts++) {
                         float reconstructed = 0.0f;
                         for (int p = 0; p < NPCS; p++)
-                            reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + (nt - 1 - ts)];
+                            reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + (nt-1-ts)];
                         reconstructed *= amp;
                         //printf("Subtracting from channel %d at time index %u (original value: %f, subtracted value: %f, after subtraction: %f)\n", c, (peak_head - (nt-1-ts)) & RING_MASK, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c], reconstructed, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] - reconstructed);
                         sample->raw_data[(peak_head - (nt - 1 - ts)) & RING_MASK][c] -= reconstructed;
@@ -354,13 +354,13 @@ int main() {
             break;
         }
         // DEBUG: export last 100 preprocessed samples
-        if (i >= binary_size - 100) {
+        /* if (i >= binary_size - 100) {
             uint32_t abs_i = i + (uint32_t)start_sample;
             for (int c = 0; c < NCHAN; c++) {
                 printf("SAMPLE %u CHAN %d: %f\n", abs_i, c,
                     sample.raw_data[sample.head][c]);
             }
-        }
+        } */
         if (i < (nt - 1)) {continue;}
         int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, abs_i);
         if (i % 100000 == 0) {
@@ -396,9 +396,9 @@ int main() {
 
     // 3. Format the file paths
     char times_file[256], temp_file[256], amp_file[256];
-    snprintf(times_file, sizeof(times_file), "%s/spike_times.npy", results_dir);
-    snprintf(temp_file,  sizeof(temp_file),  "%s/spike_templates.npy", results_dir);
-    snprintf(amp_file,   sizeof(amp_file),   "%s/amplitudes.npy", results_dir);
+    snprintf(times_file, sizeof(times_file), "%s/debug/spike_times.npy", results_dir);
+    snprintf(temp_file,  sizeof(temp_file),  "%s/debug/spike_templates.npy", results_dir);
+    snprintf(amp_file,   sizeof(amp_file),   "%s/debug/amplitudes.npy", results_dir);
 
     // 4. Save as .npy using Little-Endian NumPy types (<i8, <i4, <f8)
     save_npy(times_file, spike_times,     num_spikes, sizeof(int64_t), "<i8");
