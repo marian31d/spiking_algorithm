@@ -241,7 +241,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                     //printf("spike detected at time %u with template %d and score %f iter No. %d.\n", peak_time, best_t_id, spike_results[*spike_count-1].score, iter);
                 }
                 
-                // 2. Reconstruct and Subtract (Erase the spike)
+                /* // 2. Reconstruct and Subtract (Erase the spike)
                 if (Wall_nm[best_t_id] < 1e-6f) break;  // degenerate template, skip
                 float amp = peak_dot / Wall_nm[best_t_id];
                 for (int c = 0; c < NCHAN; c++) {
@@ -256,7 +256,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                 }
                 // 3. Recalculate to see if another spike was hiding underneath!
                 // NOTE: We must rescan at the PEAK time, not the current time
-                get_max_score_at_time(sample, peak_head, &peak_cf, &peak_dot, &best_t_id);
+                get_max_score_at_time(sample, peak_head, &peak_cf, &peak_dot, &best_t_id); */
                 
                 // 4. Break Condition
                 if (peak_cf <= TH_LEARNED_SQ) break;
