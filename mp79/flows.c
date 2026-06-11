@@ -367,7 +367,7 @@ int main() {
             break;
         }
         // DEBUG: export last 100 preprocessed samples
-        if (i >= binary_size - 100) {
+        if (i == 600*60000 + 30000) {
             uint32_t abs_i = i + (uint32_t)start_sample;
             for (int c = 0; c < NCHAN; c++) {
                 printf("SAMPLE %u CHAN %d: %f\n", abs_i, c,
