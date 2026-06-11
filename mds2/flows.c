@@ -194,7 +194,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         if (current_cf <= TH_LEARNED_SQ) {
             armed = 1;
         }
-        if (current_cf > cand_cf) {
+        if (armed && current_cf > cand_cf) {
                 // higher than current candidate -> this becomes the new candidate
                 cand_cf  = current_cf;
                 cand_dot = current_dot;
