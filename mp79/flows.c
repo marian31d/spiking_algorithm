@@ -214,6 +214,8 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         // 1. Calculate the score for the current microsecond
         get_max_score_at_time(sample, sample->head, &current_cf, &current_dot, &current_t_id);
         //printf("DEBUG: At time %u, winning template %d with cf %f\n", i, current_t_id, current_cf);
+        if (i == 600u*60000u + 30000u)
+            printf("CF_DUMP cf=%f tid=%d\n", current_cf, current_t_id);
         // --- DIAGNOSTIC: how often is the score above threshold? ---
         total_eval++;
         if (current_cf > TH_LEARNED_SQ) above_th++;
