@@ -124,17 +124,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
     for(int c=0; c<NCHAN; c++){printf("  %f", sample->raw_data[h][c]); if(c%10==0){printf("\n");}}
     printf("\n"); */
 
-    // 2. Apply CAR (Common Average Referencing)
-    float spatial_mean = 0.0f;
-    for (int c = 0; c < NCHAN; c++) {
-        spatial_mean += sample->raw_data[h][c];
-    }
-    spatial_mean /= NCHAN;
-    for (int c = 0; c < NCHAN; c++) {
-        sample->raw_data[h][c] -= spatial_mean;
-    }
-
-    // 3. Whitening
+    // 2. Whitening
     int batch_idx = i / BATCH_SIZE; //debug: dshift for all batches
     const float *Wsh_curr = &Wsh_per_batch[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
     float whitened_temp[NCHAN];
