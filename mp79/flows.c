@@ -22,7 +22,7 @@
 #define RING_MASK (RB - 1)
 #define NPCS 3
 #define NCLU 131        //Number of clusters, should be configured on the RAM
-#define TH_LEARNED_SQ 81.00    //check if it's constant
+#define TH_LEARNED_SQ 64.00    //check if it's constant
 #define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
 #define PEAK_CONFIRM 3            // confirmation window in samples
@@ -104,6 +104,22 @@ int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
     return 0; // Success! Reached the end of the 61 rows normally.
 }
 
+// k-th smallest (0-indexed), reorders buf in place
+static float kth_smallest(float *buf, int n, int k) {
+    int lo = 0, hi = n - 1;
+    while (lo < hi) {
+        float p = buf[(lo + hi) >> 1];
+        int i = lo, j = hi;
+        while (i <= j) {
+            while (buf[i] < p) i++;
+            while (buf[j] > p) j--;
+            if (i <= j) { float t = buf[i]; buf[i] = buf[j]; buf[j] = t; i++; j--; }
+        }
+        if (k <= j) hi = j; else if (k >= i) lo = i; else break;
+    }
+    return buf[k];
+}
+
 int filter_sample(SampleBuffer *sample, uint32_t i) {
     uint32_t h = sample->head;
 
@@ -125,7 +141,13 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
     for(int c=0; c<NCHAN; c++){printf("  %f", sample->raw_data[h][c]); if(c%10==0){printf("\n");}}
     printf("\n"); */
 
-    // 2. Whitening
+    // 2. CAR - median
+    float car_tmp[NCHAN];
+    for (int c = 0; c < NCHAN; c++) car_tmp[c] = sample->raw_data[h][c];
+    float med = kth_smallest(car_tmp, NCHAN, (NCHAN - 1) / 2);   // lower median, n=124 -> index 61
+    for (int c = 0; c < NCHAN; c++) sample->raw_data[h][c] -= med;
+
+    // 3. Whitening
     int batch_idx = i / BATCH_SIZE; //debug: dshift for all batches
     const float *Wsh_curr = &Wsh_per_batch[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
     float whitened_temp[NCHAN];
@@ -200,7 +222,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         if (current_cf <= TH_LEARNED_SQ) {
             armed = 1;
         }
-        if (current_cf > cand_cf) {
+        if (armed && current_cf > cand_cf) {
                 // higher than current candidate -> this becomes the new candidate
                 cand_cf  = current_cf;
                 cand_dot = current_dot;
