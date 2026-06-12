@@ -26,7 +26,7 @@
 #define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
 #define PEAK_CONFIRM 3            // confirmation window in samples
-
+#define REFRACTORY_SAMPLES 20
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
