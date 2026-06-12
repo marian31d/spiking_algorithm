@@ -57,6 +57,7 @@ static int      since    = 0;     // samples since candidate was set
 //
 static uint64_t above_th  = 0;
 static uint64_t total_eval = 0;
+static uint32_t last_commit_i[NCLU];   // per-template last fire time, init to 0
 
 //filter history variables - should be located in TCM for speed
 static float iir_x1[NCHAN];  // x[n-1] raw input
@@ -236,46 +237,49 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         since++;
         // --- PEAK DETECTION & PEELING PHASE ---
         if (armed && cand_cf > TH_LEARNED_SQ && since >= PEAK_CONFIRM) {
+            uint32_t gap = (cand_tid >= 0) ? (cand_i - last_commit_i[cand_tid]) : 999;
+            if (gap >= REFRACTORY_SAMPLES) {
+                uint32_t peak_head = (sample->head - (since)) & RING_MASK;  // ring pos of the candidate peak
+                uint32_t peak_time = (cand_i >= 41) ? (cand_i - 41) : 0;
 
-            uint32_t peak_head = (sample->head - (since)) & RING_MASK;  // ring pos of the candidate peak
-            uint32_t peak_time = (cand_i >= 41) ? (cand_i - 41) : 0;
-
-            float peak_cf   = cand_cf;
-            float peak_dot  = cand_dot;
-            int   best_t_id = cand_tid;
-            // --- ORIGINAL PEELING LOOP ---
-            for(int iter = 0; iter < MAX_PEELS; iter++) {
-                
-                // 1. Record the Spike (using the peak time)
-                if(*spike_count < 2*(*data_size)){
-                    spike_results[*spike_count].absolute_time = peak_time;
-                    spike_results[*spike_count].template_id = best_t_id;
-                    spike_results[*spike_count].score = iter;//peak_dot / Wall_nm[best_t_id];
-                    (*spike_count)++;
-                    //printf("spike detected at time %u with template %d and score %f iter No. %d.\n", peak_time, best_t_id, spike_results[*spike_count-1].score, iter);
-                }
-                
-                /* // 2. Reconstruct and Subtract (Erase the spike)
-                if (Wall_nm[best_t_id] < 1e-6f) break;  // degenerate template, skip
-                float amp = peak_dot / Wall_nm[best_t_id];
-                for (int c = 0; c < NCHAN; c++) {
-                    for (int ts = 0; ts < nt; ts++) {
-                        float reconstructed = 0.0f;
-                        for (int p = 0; p < NPCS; p++)
-                            reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + ts];
-                        reconstructed *= amp;
-                        //printf("Subtracting from channel %d at time index %u (original value: %f, subtracted value: %f, after subtraction: %f)\n", c, (peak_head - (nt-1-ts)) & RING_MASK, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c], reconstructed, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] - reconstructed);
-                        sample->raw_data[(peak_head - (nt - 1 - ts)) & RING_MASK][c] -= reconstructed;
+                float peak_cf   = cand_cf;
+                float peak_dot  = cand_dot;
+                int   best_t_id = cand_tid;
+                // --- ORIGINAL PEELING LOOP ---
+                for(int iter = 0; iter < MAX_PEELS; iter++) {
+                    
+                    // 1. Record the Spike (using the peak time)
+                    if(*spike_count < 2*(*data_size)){
+                        spike_results[*spike_count].absolute_time = peak_time;
+                        spike_results[*spike_count].template_id = best_t_id;
+                        spike_results[*spike_count].score = iter;//peak_dot / Wall_nm[best_t_id];
+                        (*spike_count)++;
+                        //printf("spike detected at time %u with template %d and score %f iter No. %d.\n", peak_time, best_t_id, spike_results[*spike_count-1].score, iter);
                     }
-                }
-                // 3. Recalculate to see if another spike was hiding underneath!
-                // NOTE: We must rescan at the PEAK time, not the current time
-                get_max_score_at_time(sample, peak_head, &peak_cf, &peak_dot, &best_t_id); */
-                
-                // 4. Break Condition
-                if (peak_cf <= TH_LEARNED_SQ) break;
+                    
+                    /* // 2. Reconstruct and Subtract (Erase the spike)
+                    if (Wall_nm[best_t_id] < 1e-6f) break;  // degenerate template, skip
+                    float amp = peak_dot / Wall_nm[best_t_id];
+                    for (int c = 0; c < NCHAN; c++) {
+                        for (int ts = 0; ts < nt; ts++) {
+                            float reconstructed = 0.0f;
+                            for (int p = 0; p < NPCS; p++)
+                                reconstructed += Wall[best_t_id*(NCHAN*NPCS) + c*NPCS + p]* wPCA[p*nt + ts];
+                            reconstructed *= amp;
+                            //printf("Subtracting from channel %d at time index %u (original value: %f, subtracted value: %f, after subtraction: %f)\n", c, (peak_head - (nt-1-ts)) & RING_MASK, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c], reconstructed, sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] - reconstructed);
+                            sample->raw_data[(peak_head - (nt - 1 - ts)) & RING_MASK][c] -= reconstructed;
+                        }
+                    }
+                    // 3. Recalculate to see if another spike was hiding underneath!
+                    // NOTE: We must rescan at the PEAK time, not the current time
+                    get_max_score_at_time(sample, peak_head, &peak_cf, &peak_dot, &best_t_id); */
+                    
+                    // 4. Break Condition
+                    if (peak_cf <= TH_LEARNED_SQ) break;
 
-            } // end iter loop
+                } // end iter loop
+            last_commit_i[cand_tid] = cand_i;
+            }
         // reset candidate
         armed = 0;                 // block further commits until score drops below Th
         cand_cf = 0.0f; cand_tid = -1; since = 0;
@@ -351,10 +355,8 @@ int main() {
     fseeko(fptr, (int64_t)byte_offset, SEEK_SET);
 
     // Add temporarily in main, before the loop:
-    printf("Wall_nm[0]=%f Wall_nm[1]=%f Wall_nm[2]=%f\n", 
-        Wall_nm[0], Wall_nm[1], Wall_nm[2]);
-    printf("Wall[0]=%f Wall[1]=%f wPCA[0]=%f\n",
-        Wall[0], Wall[1], wPCA[0]);
+    for (int t = 125; t < NCLU; t++)
+        printf("Wall_nm[%d] = %f\n", t, Wall_nm[t]);
 
     for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
