@@ -23,7 +23,7 @@
 #define NPCS 3
 #define NCLU 131        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
-#define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
+#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
 #define PEAK_CONFIRM 4            // confirmation window in samples
 #define REFRACTORY_SAMPLES 20
@@ -169,7 +169,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
 }
 
 // static inline suggests the compiler inline the assembly to avoid call overhead
-static inline void get_max_score_at_time(SampleBuffer *sample, uint32_t ring_head, float *out_max_cf, float *out_max_dot, int *out_best_t_id) {
+static inline void get_max_score_at_time(SampleBuffer *sample, uint32_t ring_head, float *out_max_cf, float *out_max_dot, int *out_best_t_id, uint32_t abs_time, int watch_tid) {
     float pc_scores[NCHAN][NPCS];
 
     // 1. Temporal Dot Product - walk backwards from ring_head
@@ -197,7 +197,8 @@ static inline void get_max_score_at_time(SampleBuffer *sample, uint32_t ring_hea
             }
         }
         float cf = (RELU(dot) * RELU(dot)) / Wall_nm[t];
-        //if(t==113) printf("DEBUG: Template %d has cf %f\n", t, cf);
+        if (t == watch_tid && abs_time >= 72000500u && abs_time <= 72000920u)
+            printf("CFTRACE %u %d %.3f %.3f\n", abs_time, t, cf, dot);
         if (cf > *out_max_cf) {
             *out_max_cf    = cf;
             *out_max_dot   = dot;
@@ -213,7 +214,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
         static int armed = 1;
         // --- SCANNING PHASE ---
         // 1. Calculate the score for the current microsecond
-        get_max_score_at_time(sample, sample->head, &current_cf, &current_dot, &current_t_id);
+        get_max_score_at_time(sample, sample->head, &current_cf, &current_dot, &current_t_id, i, 73);
         //printf("DEBUG: At time %u, winning template %d with cf %f\n", i, current_t_id, current_cf);
         if (i == 72000000u + 600u*60000u + 30000u) 
             printf("CF_DUMP cf=%f tid=%d\n", current_cf, current_t_id);
@@ -257,7 +258,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                         //printf("spike detected at time %u with template %d and score %f iter No. %d.\n", peak_time, best_t_id, spike_results[*spike_count-1].score, iter);
                     }
                     
-                    /* // 2. Reconstruct and Subtract (Erase the spike)
+                    // 2. Reconstruct and Subtract (Erase the spike)
                     if (Wall_nm[best_t_id] < 1e-6f) break;  // degenerate template, skip
                     float amp = peak_dot / Wall_nm[best_t_id];
                     for (int c = 0; c < NCHAN; c++) {
@@ -272,7 +273,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
                     }
                     // 3. Recalculate to see if another spike was hiding underneath!
                     // NOTE: We must rescan at the PEAK time, not the current time
-                    get_max_score_at_time(sample, peak_head, &peak_cf, &peak_dot, &best_t_id); */
+                    get_max_score_at_time(sample, peak_head, &peak_cf, &peak_dot, &best_t_id, cand_i, -1);
                     
                     // 4. Break Condition
                     if (peak_cf <= TH_LEARNED_SQ) break;
