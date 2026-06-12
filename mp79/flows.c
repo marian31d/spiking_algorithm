@@ -25,7 +25,7 @@
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 #define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
-#define PEAK_CONFIRM 3            // confirmation window in samples
+#define PEAK_CONFIRM 4            // confirmation window in samples
 #define REFRACTORY_SAMPLES 20
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -240,7 +240,7 @@ int template_match (SampleBuffer  *sample, SpikeEvent *spike_results, uint32_t *
             uint32_t gap = (cand_tid >= 0) ? (cand_i - last_commit_i[cand_tid]) : 999;
             if (gap >= REFRACTORY_SAMPLES) {
                 uint32_t peak_head = (sample->head - (since)) & RING_MASK;  // ring pos of the candidate peak
-                uint32_t peak_time = (cand_i >= 41) ? (cand_i - 41) : 0;
+                uint32_t peak_time = (cand_i >= 40) ? (cand_i - 40) : 0;
 
                 float peak_cf   = cand_cf;
                 float peak_dot  = cand_dot;
