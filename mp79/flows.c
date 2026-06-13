@@ -53,13 +53,17 @@ typedef struct {
 static SampleBuffer sample;
 static uint32_t num_spikes = 0;
 
-static float    pt_cand_cf[NCLU];
-static float    pt_cand_dot[NCLU];
-static uint32_t pt_cand_i[NCLU];
-static int      pt_since[NCLU];
-static int      pt_armed[NCLU];
-//
-static uint32_t last_commit_i[NCLU];   // per-template last fire time, init to 0
+// excluded MUA templates — pulled out so the peak scan and the re-scan agree
+#define SKIP_TEMPLATE(t) ((t)==1||(t)==2||(t)==3||(t)==41||(t)==46||(t)==75|| \
+                          (t)==78||(t)==80||(t)==90||(t)==95||(t)==113|| \
+                          (t)==121||(t)==126)
+
+// ONE peak detector: it only locates the peak in time
+static float    wta_cand_cf = 0.0f;   // running max of the best template's cost
+static uint32_t wta_cand_i  = 0;      // sample index of that max  == peak location
+static int      wta_since   = 0;
+static int      wta_armed   = 1;
+static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
 
 //filter history variables - should be located in TCM for speed
 static float iir_x1[NCHAN];  // x[n-1] raw input
@@ -207,54 +211,67 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     static float cf_all[NCLU];
     static float dot_all[NCLU];
 
+    // score every template at the current sample
     score_all_templates(sample, sample->head, cf_all, dot_all);
 
-    // One independent peak-detector per template — your old single-candidate logic, replicated.
-    for(int t = 0; t < NCLU; t++){
-        if (t==1||t==2||t==3||t==41||t==46||t==75||t==78||t==80||t==90||t==95||t==113||t==121||t==126) continue;
+    // detection signal = the SINGLE best template's cost (one max, not per-template)
+    float win_cf = 0.0f;
+    for (int t = 0; t < NCLU; t++) {
+        if (SKIP_TEMPLATE(t)) continue;
+        if (cf_all[t] > win_cf) win_cf = cf_all[t];
+    }
 
-        float cf  = cf_all[t];
-        float dot = dot_all[t];
+    // locate the temporal peak of that best cost (arm / track-max / confirm)
+    if (win_cf <= TH_LEARNED_SQ) wta_armed = 1;
+    if (wta_armed && win_cf > wta_cand_cf) { wta_cand_cf = win_cf; wta_cand_i = i; wta_since = 0; }
+    else                                     { wta_since++; }
 
-        if (cf <= TH_LEARNED_SQ) pt_armed[t] = 1;          // re-arm below threshold
+    // confirmed peak -> matching pursuit at the peak location
+    if (wta_armed && wta_cand_cf > TH_LEARNED_SQ && wta_since >= PEAK_CONFIRM) {
 
-        if (pt_armed[t] && cf > pt_cand_cf[t]) {           // track running max
-            pt_cand_cf[t]  = cf;
-            pt_cand_dot[t] = dot;
-            pt_cand_i[t]   = i;
-            pt_since[t]    = 0;
-            continue;
-        }
-        pt_since[t]++;
+        uint32_t peak_head = (sample->head - wta_since) & RING_MASK;
+        uint32_t peak_time = (wta_cand_i >= SPIKE_TIME_OFFSET)
+                             ? (wta_cand_i - SPIKE_TIME_OFFSET) : 0;
 
-        if (pt_armed[t] && pt_cand_cf[t] > TH_LEARNED_SQ && pt_since[t] >= PEAK_CONFIRM) {
-            uint32_t gap = pt_cand_i[t] - last_commit_i[t];
-            if (gap >= REFRACTORY_SAMPLES) {
-                uint32_t peak_time = (pt_cand_i[t] >= SPIKE_TIME_OFFSET)
-                                     ? (pt_cand_i[t] - SPIKE_TIME_OFFSET) : 0;
-                if (*spike_count < 2*(*data_size)) {
-                    spike_results[*spike_count].absolute_time = peak_time;
-                    spike_results[*spike_count].template_id   = (uint16_t)t;
-                    spike_results[*spike_count].score         = pt_cand_dot[t] / Wall_nm[t];
-                    (*spike_count)++;
-                }
-#if ENABLE_PEEL_SUBTRACT
-                uint32_t peak_head = (sample->head - pt_since[t]) & RING_MASK;
-                float amp = pt_cand_dot[t] / Wall_nm[t];
-                for (int c = 0; c < NCHAN; c++)
-                    for (int ts = 0; ts < nt; ts++) {
-                        float recon = 0.0f;
-                        for (int p = 0; p < NPCS; p++)
-                            recon += Wall[t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
-                        sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
-                    }
-#endif
-                last_commit_i[t] = pt_cand_i[t];
+        for (int peel = 0; peel < MAX_PEELS; peel++) {
+
+            // (1) re-score ALL templates on the CURRENT residual at the peak
+            score_all_templates(sample, peak_head, cf_all, dot_all);
+
+            // (2) take the single best remaining template
+            int   best_t = -1; float best_cf = 0.0f, best_dot = 0.0f;
+            for (int t = 0; t < NCLU; t++) {
+                if (SKIP_TEMPLATE(t)) continue;
+                if (cf_all[t] > best_cf) { best_cf = cf_all[t]; best_dot = dot_all[t]; best_t = t; }
             }
-            pt_armed[t]   = 0;
-            pt_cand_cf[t] = 0.0f;
-            pt_since[t]   = 0;
+
+            // (3) residual clean -> stop
+            if (best_t < 0 || best_cf <= TH_LEARNED_SQ) break;
+
+            // (4) per-neuron refractory
+            if (wta_cand_i - last_commit_i[best_t] < REFRACTORY_SAMPLES) break;
+
+            // (5) commit at the least-squares amplitude
+            float amp = best_dot / Wall_nm[best_t];
+            if (*spike_count < 2*(*data_size)) {
+                spike_results[*spike_count].absolute_time = peak_time;
+                spike_results[*spike_count].template_id   = (uint16_t)best_t;
+                spike_results[*spike_count].score         = amp;
+                (*spike_count)++;
+            }
+            last_commit_i[best_t] = wta_cand_i;
+
+            // (6) subtract the reconstructed waveform from the residual
+            for (int c = 0; c < NCHAN; c++)
+                for (int ts = 0; ts < nt; ts++) {
+                    float recon = 0.0f;
+                    for (int p = 0; p < NPCS; p++)
+                        recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
+                    sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
+                }
         }
+
+        wta_armed = 0; wta_cand_cf = 0.0f; wta_since = 0;
     }
     return 0;
 }
@@ -316,10 +333,8 @@ int main() {
     num_spikes = 0;
     memset(&sample.raw_data, 0, sizeof(sample.raw_data));
 
-    for (int t = 0; t < NCLU; t++) {
-        pt_armed[t] = 1; pt_cand_cf[t] = 0.0f; pt_cand_i[t] = 0;
-        pt_since[t] = 0; last_commit_i[t] = 0;
-    }
+    wta_armed = 1; wta_cand_cf = 0.0f; wta_cand_i = 0; wta_since = 0;
+    for (int t = 0; t < NCLU; t++) last_commit_i[t] = 0;
     uint64_t start_sample = 72000000;
     uint64_t samples_to_process = total_samples - start_sample;
     uint32_t binary_size = (uint32_t)samples_to_process;
