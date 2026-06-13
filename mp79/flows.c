@@ -29,7 +29,7 @@
 #define REFRACTORY_SAMPLES 20
 
 #define SPIKE_TIME_OFFSET 40
-#define ENABLE_PEEL_SUBTRACT 0
+#define ENABLE_PEEL_SUBTRACT 1
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
