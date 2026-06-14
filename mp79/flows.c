@@ -57,7 +57,6 @@ typedef struct {
 static SampleBuffer sample;
 static uint32_t num_spikes = 0;
 
-
 static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
 
 #define CF_DUMP_N 2000000
