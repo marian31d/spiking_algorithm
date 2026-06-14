@@ -29,7 +29,7 @@
 #define REFRACTORY_SAMPLES 20
 
 #define SPIKE_TIME_OFFSET 40
-#define ENABLE_PEEL_SUBTRACT 1
+#define ENABLE_PEEL_SUBTRACT 0
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
@@ -64,6 +64,8 @@ static uint32_t wta_cand_i  = 0;      // sample index of that max  == peak locat
 static int      wta_since   = 0;
 static int      wta_armed   = 1;
 static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
+
+static float *cf_trace = NULL;     // one win_cf per processed sample
 
 //filter history variables - should be located in TCM for speed
 static float iir_x1[NCHAN];  // x[n-1] raw input
@@ -220,6 +222,7 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         if (SKIP_TEMPLATE(t)) continue;
         if (cf_all[t] > win_cf) win_cf = cf_all[t];
     }
+    cf_trace[i] = win_cf;     // i is the loop index = abs sample - start_sample
 
     // locate the temporal peak of that best cost (arm / track-max / confirm)
     if (win_cf <= TH_LEARNED_SQ) wta_armed = 1;
@@ -386,6 +389,8 @@ int main() {
     int32_t *spike_templates = (int32_t *)malloc(num_spikes * sizeof(int32_t));
     double  *amplitudes     = (double *)malloc(num_spikes * sizeof(double));
 
+    cf_trace = malloc((size_t)binary_size * sizeof(float));
+
     if (!spike_times || !spike_templates || !amplitudes) {
         fprintf(stderr, "Memory allocation failed for output arrays.\n");
         return -1;
@@ -409,6 +414,8 @@ int main() {
     save_npy(temp_file,  spike_templates, num_spikes, sizeof(int32_t), "<i4");
     save_npy(amp_file,   amplitudes,      num_spikes, sizeof(double),  "<f8");
 
+    save_npy("/data/results/mP79_res/flows_c/debug/cf_trace.npy", cf_trace, binary_size, sizeof(float), "<f4");
+    
     // 5. Clean up RAM
     free(spike_times);
     free(spike_templates);
