@@ -18,7 +18,7 @@
 #define NCHAN_BIN 128
 #define NCHAN 124
 #define NCLU 131        //Number of clusters, should be configured on the RAM
-#define TH_LEARNED_SQ 64.00    //check if it's constant
+#define TH_LEARNED_SQ 121.00    //check if it's constant
 
 
 #define FS 20000
@@ -221,7 +221,9 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     uint32_t peak_i = (i >= 3) ? (i - 3) : 0;           // spike time = confirmed peak
 
     score_trig(sample, end_head, cf_all, dot_all);      // stage 2: 23-sample matched filter (only here)
-
+    float win_cf = 0.0f;
+    for (int t = 0; t < NCLU; t++) if (cf_all[t] > win_cf) win_cf = cf_all[t];
+    if (i < (CF_DUMP_N + 72000000u)) cf_trace[i - 72000000u] = win_cf;
     // best eligible template: above threshold AND not refractory; skip (not break) the others
     int best_t=-1; float best_cf=0.0f, best_dot=0.0f;
     for (int t = 0; t < NCLU; t++) {
@@ -230,7 +232,6 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         if (cf_all[t] > best_cf) { best_cf=cf_all[t]; best_dot=dot_all[t]; best_t=t; }
     }
     if (best_t < 0) return 0;
-
     float amp = best_dot / Wall_nm_23[best_t];
     if (*spike_count < 2*(*data_size)) {
         spike_results[*spike_count].absolute_time = peak_i;
