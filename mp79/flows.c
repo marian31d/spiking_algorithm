@@ -3,10 +3,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 // Include array hearder files for configuration 
 #include "Wall.h"
-#include "Wall_nm.h" 
+#include "Wall_nm_23.h"  //#include "Wall_nm.h" 
 #include "Wsh_per_batch.h"
 #include "iir_weights.h"
 #include "wPCA.h"
@@ -16,19 +17,22 @@
 
 #define NCHAN_BIN 128
 #define NCHAN 124
+#define NCLU 131        //Number of clusters, should be configured on the RAM
+#define TH_LEARNED_SQ 64.00    //check if it's constant
+
+
 #define FS 20000
 #define nt 61
 #define RB 128       //ring buffer length prev 64
 #define RING_MASK (RB - 1)
 #define NPCS 3
-#define NCLU 131        //Number of clusters, should be configured on the RAM
-#define TH_LEARNED_SQ 121.00    //check if it's constant
 #define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
-#define PEAK_CONFIRM 4            // confirmation window in samples
 #define REFRACTORY_SAMPLES 20
 
-#define SPIKE_TIME_OFFSET 40
+#define NT_TRIG 23               // 20 pre-peak + peak + 2  (peak at nt0min=20)
+#define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
+#define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
 #define ENABLE_PEEL_SUBTRACT 0
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -53,16 +57,7 @@ typedef struct {
 static SampleBuffer sample;
 static uint32_t num_spikes = 0;
 
-// excluded MUA templates — pulled out so the peak scan and the re-scan agree
-#define SKIP_TEMPLATE(t) ((t)==1||(t)==2||(t)==3||(t)==41||(t)==46||(t)==75|| \
-                          (t)==78||(t)==80||(t)==90||(t)==95||(t)==113|| \
-                          (t)==121||(t)==126)
 
-// ONE peak detector: it only locates the peak in time
-static float    wta_cand_cf = 0.0f;   // running max of the best template's cost
-static uint32_t wta_cand_i  = 0;      // sample index of that max  == peak location
-static int      wta_since   = 0;
-static int      wta_armed   = 1;
 static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
 
 #define CF_DUMP_N 2000000
@@ -176,109 +171,74 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
     printf("\n"); */
     return(0);
 }
-
-// static inline suggests the compiler inline the assembly to avoid call overhead
-static inline void score_all_templates(SampleBuffer *sample, uint32_t ring_head,
-                                       float *cf_all, float *dot_all) {
-    float pc_scores[NCHAN][NPCS];
-
-    // Temporal projection — shared across all templates (the expensive part, unchanged)
-    for(int c = 0; c < NCHAN; c++){
-        for(int p = 0; p < NPCS; p++){
-            float score = 0.0f;
-            #pragma GCC unroll 61
-            for(int s = 0; s < nt; s++){
-                score += sample->raw_data[(ring_head - (nt - 1 - s)) & RING_MASK][c] * wPCA[p*nt + s];
-            }
-            pc_scores[c][p] = score;
+static inline void score_trig(SampleBuffer *sample, uint32_t end_head,
+                              float *cf_all, float *dot_all) {
+    float pc[NCHAN][NPCS];
+    for (int c = 0; c < NCHAN; c++)
+        for (int p = 0; p < NPCS; p++) {
+            float s = 0.0f;
+            for (int k = 0; k < NT_TRIG; k++)            // only 23 taps
+                s += sample->raw_data[(end_head - (NT_TRIG-1-k)) & RING_MASK][c] * wPCA[p*nt + k];
+            pc[c][p] = s;
         }
-    }
-
-    // Per-template cost function — keep ALL of them, do NOT collapse to a winner
-    for(int t = 0; t < NCLU; t++){
-        if (Wall_nm[t] < 1e-6f) {
-            cf_all[t] = 0.0f; dot_all[t] = 0.0f; continue;
-        }
+    for (int t = 0; t < NCLU; t++) {
         float dot = 0.0f;
-        for(int c = 0; c < NCHAN; c++)
-            for(int p = 0; p < NPCS; p++)
-                dot += pc_scores[c][p] * Wall[t*(NCHAN*NPCS) + c*NPCS + p];
+        for (int c = 0; c < NCHAN; c++)
+            for (int p = 0; p < NPCS; p++)
+                dot += pc[c][p] * Wall[t*(NCHAN*NPCS) + c*NPCS + p];
         dot_all[t] = dot;
         float r = RELU(dot);
-        cf_all[t] = (r * r) / Wall_nm[t];
+        cf_all[t] = (r*r) / Wall_nm_23[t];               // truncated norm, NOT Wall_nm
     }
+}
+
+// static inline suggests the compiler inline the assembly to avoid call overhead
+// returns 1 and sets *peak_end_head if a magnitude peak is CONFIRMED 3 samples back
+static inline int confirm_peak(SampleBuffer *sample, uint32_t *peak_end_head) {
+    uint32_t h  = sample->head;
+    uint32_t pk = (h - 3) & RING_MASK;          // candidate peak (3 samples ago)
+    uint32_t a  = (h - 2) & RING_MASK;          // after
+    uint32_t b  = (h - 4) & RING_MASK;          // before
+
+    float vpk=0, va=0, vb=0;
+    for (int c = 0; c < NCHAN; c++) {
+        float x=fabsf(sample->raw_data[pk][c]); if(x>vpk)vpk=x;
+        float y=fabsf(sample->raw_data[a][c]); if(y>va)va=y;
+        float z=fabsf(sample->raw_data[b][c]); if(z>vb)vb=z;
+    }
+    if (vpk < V_TH) return 0;                    // not big enough
+    if (!(vpk >= va && vpk >= vb)) return 0;     // not a local magnitude max
+    *peak_end_head = (h - 1) & RING_MASK;        // window ends at peak+2 -> covers [peak-20, peak+2]
+    return 1;
 }
 
 int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
                    uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i){
-    static float cf_all[NCLU];
-    static float dot_all[NCLU];
+    static float cf_all[NCLU], dot_all[NCLU];
 
-    // score every template at the current sample
-    score_all_templates(sample, sample->head, cf_all, dot_all);
+    uint32_t end_head;
+    if (!confirm_peak(sample, &end_head)) return 0;     // stage 1: cheap voltage gate
+    uint32_t peak_i = (i >= 3) ? (i - 3) : 0;           // spike time = confirmed peak
 
-    // detection signal = the SINGLE best template's cost (one max, not per-template)
-    float win_cf = 0.0f;
+    score_trig(sample, end_head, cf_all, dot_all);      // stage 2: 23-sample matched filter (only here)
+
+    // best eligible template: above threshold AND not refractory; skip (not break) the others
+    int best_t=-1; float best_cf=0.0f, best_dot=0.0f;
     for (int t = 0; t < NCLU; t++) {
-        if (SKIP_TEMPLATE(t)) continue;
-        if (cf_all[t] > win_cf) win_cf = cf_all[t];
+        if (cf_all[t] <= TH_LEARNED_SQ)                continue;
+        if (peak_i - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
+        if (cf_all[t] > best_cf) { best_cf=cf_all[t]; best_dot=dot_all[t]; best_t=t; }
     }
-    if (i % 200000 == 0)
-    fprintf(stderr, "abs=%u idx=%u win_cf=%f\n", i, i - 72000000u, win_cf);
-    if (i < (CF_DUMP_N+72000000u)) cf_trace[i - 72000000u] = win_cf;     // i is the loop index = abs sample - start_sample
+    if (best_t < 0) return 0;
 
-    // locate the temporal peak of that best cost (arm / track-max / confirm)
-    if (win_cf <= TH_LEARNED_SQ) wta_armed = 1;
-    if (wta_armed && win_cf > wta_cand_cf) { wta_cand_cf = win_cf; wta_cand_i = i; wta_since = 0; }
-    else                                     { wta_since++; }
-
-    // confirmed peak -> matching pursuit at the peak location
-    if (wta_armed && wta_cand_cf > TH_LEARNED_SQ && wta_since >= PEAK_CONFIRM) {
-
-        uint32_t peak_head = (sample->head - wta_since) & RING_MASK;
-        uint32_t peak_time = (wta_cand_i >= SPIKE_TIME_OFFSET)
-                             ? (wta_cand_i - SPIKE_TIME_OFFSET) : 0;
-
-        for (int peel = 0; peel < MAX_PEELS; peel++) {
-
-            // (1) re-score ALL templates on the CURRENT residual at the peak
-            score_all_templates(sample, peak_head, cf_all, dot_all);
-
-            // (2) take the single best remaining template
-            int   best_t = -1; float best_cf = 0.0f, best_dot = 0.0f;
-            for (int t = 0; t < NCLU; t++) {
-                if (SKIP_TEMPLATE(t)) continue;
-                if (cf_all[t] > best_cf) { best_cf = cf_all[t]; best_dot = dot_all[t]; best_t = t; }
-            }
-
-            // (3) residual clean -> stop
-            if (best_t < 0 || best_cf <= TH_LEARNED_SQ) break;
-
-            // (4) per-neuron refractory
-            if (wta_cand_i - last_commit_i[best_t] < REFRACTORY_SAMPLES) break;
-
-            // (5) commit at the least-squares amplitude
-            float amp = best_dot / Wall_nm[best_t];
-            if (*spike_count < 2*(*data_size)) {
-                spike_results[*spike_count].absolute_time = peak_time;
-                spike_results[*spike_count].template_id   = (uint16_t)best_t;
-                spike_results[*spike_count].score         = amp;
-                (*spike_count)++;
-            }
-            last_commit_i[best_t] = wta_cand_i;
-
-            // (6) subtract the reconstructed waveform from the residual
-            for (int c = 0; c < NCHAN; c++)
-                for (int ts = 0; ts < nt; ts++) {
-                    float recon = 0.0f;
-                    for (int p = 0; p < NPCS; p++)
-                        recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
-                    sample->raw_data[(peak_head - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
-                }
-        }
-
-        wta_armed = 0; wta_cand_cf = 0.0f; wta_since = 0;
+    float amp = best_dot / Wall_nm_23[best_t];
+    if (*spike_count < 2*(*data_size)) {
+        spike_results[*spike_count].absolute_time = peak_i;
+        spike_results[*spike_count].template_id   = (uint16_t)best_t;
+        spike_results[*spike_count].score         = amp;
+        (*spike_count)++;
     }
+    last_commit_i[best_t] = peak_i;
     return 0;
 }
 
@@ -339,7 +299,6 @@ int main() {
     num_spikes = 0;
     memset(&sample.raw_data, 0, sizeof(sample.raw_data));
 
-    wta_armed = 1; wta_cand_cf = 0.0f; wta_cand_i = 0; wta_since = 0;
     for (int t = 0; t < NCLU; t++) last_commit_i[t] = 0;
     uint64_t start_sample = 72000000;
     uint64_t samples_to_process = total_samples - start_sample;
@@ -352,7 +311,7 @@ int main() {
 
     // Add temporarily in main, before the loop:
     for (int t = 125; t < NCLU; t++)
-        printf("Wall_nm[%d] = %f\n", t, Wall_nm[t]);
+        printf("Wall_nm[%d] = %f\n", t, Wall_nm_23[t]);
     
     cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
     if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
