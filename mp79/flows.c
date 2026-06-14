@@ -32,7 +32,7 @@
 
 #define NT_TRIG 23               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
-#define V_TH 5.0f                // magnitude trigger on whitened data — TUNE
+#define V_TH 7.0f                // magnitude trigger on whitened data — TUNE
 #define ENABLE_PEEL_SUBTRACT 0
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
