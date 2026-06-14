@@ -22,7 +22,7 @@
 #define RING_MASK (RB - 1)
 #define NPCS 3
 #define NCLU 131        //Number of clusters, should be configured on the RAM
-#define TH_LEARNED_SQ 64.00    //check if it's constant
+#define TH_LEARNED_SQ 121.00    //check if it's constant
 #define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
 #define PEAK_CONFIRM 4            // confirmation window in samples
@@ -223,7 +223,9 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         if (SKIP_TEMPLATE(t)) continue;
         if (cf_all[t] > win_cf) win_cf = cf_all[t];
     }
-    if (i < CF_DUMP_N) cf_trace[i] = win_cf;     // i is the loop index = abs sample - start_sample
+    if (i % 200000 == 0)
+    fprintf(stderr, "abs=%u idx=%u win_cf=%f\n", i, i - 72000000u, win_cf);
+    if (i < (CF_DUMP_N+72000000u)) cf_trace[i - 72000000u] = win_cf;     // i is the loop index = abs sample - start_sample
 
     // locate the temporal peak of that best cost (arm / track-max / confirm)
     if (win_cf <= TH_LEARNED_SQ) wta_armed = 1;
