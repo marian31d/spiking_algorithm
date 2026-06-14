@@ -32,7 +32,7 @@
 
 #define NT_TRIG 23               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
-#define V_TH 6.0f                // magnitude trigger on whitened data — TUNE
+#define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
 #define ENABLE_PEEL_SUBTRACT 0
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
@@ -198,15 +198,17 @@ static inline int confirm_peak(SampleBuffer *sample, uint32_t *peak_end_head) {
     uint32_t pk = (h - 3) & RING_MASK;          // candidate peak (3 samples ago)
     uint32_t a  = (h - 2) & RING_MASK;          // after
     uint32_t b  = (h - 4) & RING_MASK;          // before
+    uint32_t d  = (h - 1) & RING_MASK;          // before before
 
-    float vpk=0, va=0, vb=0;
+    float vpk=0, va=0, vb=0, vd=0;
     for (int c = 0; c < NCHAN; c++) {
         float x=fabsf(sample->raw_data[pk][c]); if(x>vpk)vpk=x;
         float y=fabsf(sample->raw_data[a][c]); if(y>va)va=y;
         float z=fabsf(sample->raw_data[b][c]); if(z>vb)vb=z;
+        float w=fabsf(sample->raw_data[d][c]); if(w>vd)vd=w;
     }
     if (vpk < V_TH) return 0;                    // not big enough
-    if (!(vpk >= va && vpk >= vb)) return 0;     // not a local magnitude max
+    if (!(vpk >= va && vpk >= vb && vpk >= vd)) return 0;     // not a local magnitude max
     *peak_end_head = (h - 1) & RING_MASK;        // window ends at peak+2 -> covers [peak-20, peak+2]
     return 1;
 }
