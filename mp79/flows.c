@@ -65,6 +65,7 @@ static int      wta_since   = 0;
 static int      wta_armed   = 1;
 static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
 
+#define CF_DUMP_N 2000000
 static float *cf_trace = NULL;     // one win_cf per processed sample
 
 //filter history variables - should be located in TCM for speed
@@ -222,7 +223,7 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         if (SKIP_TEMPLATE(t)) continue;
         if (cf_all[t] > win_cf) win_cf = cf_all[t];
     }
-    cf_trace[i] = win_cf;     // i is the loop index = abs sample - start_sample
+    if (i < CF_DUMP_N) cf_trace[i] = win_cf;     // i is the loop index = abs sample - start_sample
 
     // locate the temporal peak of that best cost (arm / track-max / confirm)
     if (win_cf <= TH_LEARNED_SQ) wta_armed = 1;
@@ -350,6 +351,9 @@ int main() {
     // Add temporarily in main, before the loop:
     for (int t = 125; t < NCLU; t++)
         printf("Wall_nm[%d] = %f\n", t, Wall_nm[t]);
+    
+    cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
+    if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
 
     for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
@@ -389,7 +393,6 @@ int main() {
     int32_t *spike_templates = (int32_t *)malloc(num_spikes * sizeof(int32_t));
     double  *amplitudes     = (double *)malloc(num_spikes * sizeof(double));
 
-    cf_trace = malloc((size_t)binary_size * sizeof(float));
 
     if (!spike_times || !spike_templates || !amplitudes) {
         fprintf(stderr, "Memory allocation failed for output arrays.\n");
@@ -414,8 +417,8 @@ int main() {
     save_npy(temp_file,  spike_templates, num_spikes, sizeof(int32_t), "<i4");
     save_npy(amp_file,   amplitudes,      num_spikes, sizeof(double),  "<f8");
 
-    save_npy("/data/results/mP79_res/flows_c/debug/cf_trace.npy", cf_trace, binary_size, sizeof(float), "<f4");
-    
+    save_npy("/data/results/mP79_res/flows_c/debug/cf_trace.npy", cf_trace, CF_DUMP_N, sizeof(float), "<f4");
+    free(cf_trace);    
     // 5. Clean up RAM
     free(spike_times);
     free(spike_templates);
