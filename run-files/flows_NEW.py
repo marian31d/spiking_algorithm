@@ -397,10 +397,11 @@ def online_flow(bin_path: Path, probe_path: Path,
     np.save(out_dir / "st.npy", st_abs)
     np.save(out_dir / "tF.npy", tF.detach().cpu().numpy() if isinstance(tF, torch.Tensor) else np.array(tF))
 
-    # Save templates and ops for complete environment reproduction
+    # Save templates pc_feature_indices ops for complete environment reproduction
     if (offline_dir / "templates.npy").exists():
         shutil.copy(offline_dir / "templates.npy", out_dir / "templates.npy")
-
+    if (offline_dir / "templates.npy").exists():
+        shutil.copy(offline_dir / "pc_feature_ind.npy", out_dir / "pc_feature_ind.npy")
     save_ops(ops, results_dir=out_dir)
 
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
