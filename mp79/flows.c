@@ -11,10 +11,11 @@
 #include "Wsh_per_batch.h"
 #include "iir_weights.h"
 #include "wPCA.h"
+#include "spatial_template_groups.h"
 
 #define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
 
-
+#define SHANK_NUM 11
 #define NCHAN_BIN 128
 #define NCHAN 124
 #define NCLU 131        //Number of clusters, should be configured on the RAM
@@ -226,21 +227,26 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     for (int t = 0; t < NCLU; t++) if (cf_all[t] > win_cf) win_cf = cf_all[t];
     if (i < (CF_DUMP_N + 72000000u)) cf_trace[i - 72000000u] = win_cf;
     // best eligible template: above threshold AND not refractory; skip (not break) the others
-    int best_t=-1; float best_cf=0.0f, best_dot=0.0f;
+    int best_t[SHANK_NUM]; float best_cf[SHANK_NUM], best_dot[SHANK_NUM];
+    for (int sh = 0; sh < SHANK_NUM; sh++) { best_t[sh] = -1; best_cf[sh] = 0.0f; best_dot[sh] = 0.0f; }
     for (int t = 0; t < NCLU; t++) {
         if (cf_all[t] <= TH_LEARNED_SQ)                continue;
         if (peak_i - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
-        if (cf_all[t] > best_cf) { best_cf=cf_all[t]; best_dot=dot_all[t]; best_t=t; }
+        int shank = (int)spatial_template_groups[t];
+        if (cf_all[t] > best_cf[shank]) { best_cf[shank]=cf_all[t]; best_dot[shank]=dot_all[t]; best_t[shank]=t; }
     }
-    if (best_t < 0) return 0;
-    float amp = best_dot / Wall_nm_23[best_t];
-    if (*spike_count < 2*(*data_size)) {
-        spike_results[*spike_count].absolute_time = peak_i;
-        spike_results[*spike_count].template_id   = (uint16_t)best_t;
-        spike_results[*spike_count].score         = amp;
-        (*spike_count)++;
+    float amp[SHANK_NUM];
+    for(int sh = 0; sh < SHANK_NUM; sh++) {
+        if (best_t[sh] < 0) continue;  
+        amp[sh] = best_dot[sh] / Wall_nm_23[best_t[sh]];
+        if (*spike_count < 2*(*data_size)) {
+            spike_results[*spike_count].absolute_time = peak_i;
+            spike_results[*spike_count].template_id   = (uint16_t)best_t[sh];
+            spike_results[*spike_count].score         = amp[sh];
+            (*spike_count)++;
+        }
+        last_commit_i[best_t[sh]] = peak_i;
     }
-    last_commit_i[best_t] = peak_i;
     return 0;
 }
 
