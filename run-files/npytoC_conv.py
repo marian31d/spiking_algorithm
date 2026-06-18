@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import json
 import os
 from scipy import signal
 from scipy.signal import butter, filtfilt
@@ -69,28 +70,82 @@ def get_iir_weights(result_dir):
         f.write(c_header_content)
     
     print(f"Successfully generated {iir_path} as an array.")
-    
+
+def mask_Wall(Wall, ops, nC=None):
+    """
+    Wall: (K, NCHAN, NPCS)  e.g. (173, 126, 3)
+    Keeps each template's nC nearest channels (by probe geometry around the
+    template's peak channel), zeros all others. Returns masked Wall + nm.
+    """
+    K, NCHAN, NPCS = Wall.shape
+
+    xc = np.asarray(ops['xc'], dtype=np.float64)
+    yc = np.asarray(ops['yc'], dtype=np.float64)
+    assert xc.shape[0] == NCHAN, f"xc has {xc.shape[0]} chans, Wall has {NCHAN}"
+
+    if nC is None:
+        nC = int(ops['settings']['nearest_chans'])   # KS default ~10
+
+    # peak channel per template = channel carrying the most energy
+    energy = (Wall**2).sum(axis=2)        # (K, NCHAN)
+    peak_ch = energy.argmax(axis=1)       # (K,)
+
+    # squared distance between every pair of channels
+    d2 = (xc[:, None] - xc[None, :])**2 + (yc[:, None] - yc[None, :])**2  # (NCHAN, NCHAN)
+
+    Wall_masked = np.zeros_like(Wall)
+    for k in range(K):
+        near = np.argsort(d2[peak_ch[k]])[:nC]    # nC nearest channels to this template's peak
+        Wall_masked[k, near, :] = Wall[k, near, :]
+
+    kept = (np.abs(Wall_masked).sum(axis=2) > 0).sum(axis=1)  # channels kept per template
+    print(f"[MASK] nearest_chans={nC}; kept per template: "
+          f"min={kept.min()} max={kept.max()} (NCHAN={NCHAN})")
+    return Wall_masked
+
+def group_templates(indices, probe):
+    """
+    Group templates by spatial position according to probe shanks.
+    Loads probe and check kcoords in it to group templates by location.
+    """
+    kcoord = np.array(probe['kcoords'])
+    nchan = probe['n_chan']
+    groups = [0] * len(indices) #indix = the id of the group, values = the list of templates
+    for ti in range(len(indices)):
+        t = indices[ti]
+        for j in range(max(kcoord)+1): #search for group id with minimum similar channels/
+            ind = np.where(kcoord==j)[0] #get channels in this group
+            common = len(set(ind) & set(t))
+            if common > 7:
+                groups[ti] = j
+                break
+    groups_np = np.array(groups)
+    return groups_np
+
+
 def main():
     # --- 1. Set your directory ---
     #
     export_dir = "/data/results/mds2_res/flows_final_shift/updated_dshift/gui-online-shift/export"
     offline_dir = "/data/results/mds2_res/flows_final_shift/updated_dshift/gui-online-shift"
     result_dir = "/data/spiking_algorithm/mds2"
-
-    # --- 2. Load Wall (Templates) ---
-    Wall_np = np.load(os.path.join(export_dir, "Wall.npy"))
-    Wall_h = os.path.join(result_dir, "Wall.h")
-    write_c_float_header(Wall_np, "Wall", Wall_h)
-
-    # --- 3. Export nm[] — one scalar per template ---
-    #nm = (Wall_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
-    Wall_nm_np = np.load(os.path.join(export_dir, "Wall_nm.npy"))
-    nm_h = os.path.join(result_dir, "Wall_nm.h")
-    write_c_float_header(Wall_nm_np, "Wall_nm", nm_h)
-
-    # --- 4. Load Ops ---
+    num_shanks = 8  # Set this according to your probe geometry
+    # --- 2. Load Ops ---
     ops_path = os.path.join(offline_dir, "ops.npy")
     ops = np.load(ops_path, allow_pickle=True).item()
+
+    # --- 3. Load Wall (Templates) ---
+    Wall_np = np.load(os.path.join(export_dir, "Wall.npy"))
+    Wall_h = os.path.join(result_dir, "Wall.h")
+    Wall_masked_np = mask_Wall(Wall_np, ops)
+    write_c_float_header(Wall_masked_np, "Wall", Wall_h)
+
+    # --- 4. Export nm[] — one scalar per template ---
+    Wall_nm_masked = (Wall_masked_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
+    #Wall_nm_np = np.load(os.path.join(export_dir, "Wall_nm.npy"))  #uncomment in case needed non sparse Wall
+    nm_h = os.path.join(result_dir, "Wall_nm.h")
+    write_c_float_header(Wall_nm_masked, "Wall_nm", nm_h)
+
 
     # --- 5. Export Th_learned (detection threshold) ---
     Th_learned = float(ops.get("Th_learned", 8.0))
@@ -131,6 +186,18 @@ def main():
 
     # --- 9. Get IIR filter weights 
     get_iir_weights(result_dir)
+
+    # --- 10. Get template groups according to locations
+    # Outputs an array such that the index is the templates id and the value is the group number according to location.
+    indices_path = os.path.join(offline_dir, "pc_feature_ind.npy")
+    probe_path = os.path.join(result_dir, "probe_mds2.json")  #change probe name
+    with open(probe_path, 'r') as f:     #change probe name
+        probe = json.load(f)
+    indices = np.load(indices_path, allow_pickle=True)
+    groups_np = group_templates(indices, probe)
+    print(np.unique(groups_np, axis=0).shape[0], "groups;", np.bincount(groups_np).sum(), "assigned")
+    template_groups_h = os.path.join(result_dir, "spatial_template_groups.h")
+    write_c_float_header(groups_np, "spatial_template_groups", template_groups_h)
 
 if __name__ == "__main__":
     main()
