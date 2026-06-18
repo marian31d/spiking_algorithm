@@ -8,7 +8,7 @@
 // Include array hearder files for configuration 
 #include "Wall.h"
 #include "Wall_nm_23.h"  //#include "Wall_nm.h" 
-#include "Wsh_per_batch.h"
+#include "Wrot.h"
 #include "iir_weights.h"
 #include "wPCA.h"
 #include "spatial_template_groups.h"
@@ -154,12 +154,12 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
 
     // 3. Whitening
     int batch_idx = i / BATCH_SIZE; //debug: dshift for all batches
-    const float *Wsh_curr = &Wsh_per_batch[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
+    //const float *Wsh_curr = &Wsh_per_batch[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
     float whitened_temp[NCHAN];
     for (int w = 0; w < NCHAN; w++) {
         float sum = 0.0f; 
         for (int c = 0; c < NCHAN; c++) {
-            sum += sample->raw_data[h][c] * Wsh_curr[w * NCHAN + c];
+            sum += sample->raw_data[h][c] * Wrot[w * NCHAN + c];
         }
         whitened_temp[w] = sum;
     }
@@ -229,7 +229,7 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     /////////////////////DEBUG/////////////////////////
     printf("DEBUGGING - PRINTING WINNING CF AND TEMPLATE ID\n");
     if (i >= CF_DUMP_N && i <= CF_DUMP_N + 60000u) {
-        fwrite(&cf_all[175], sizeof(float), 1, cf_trace);  // debug: dump one template's cf for inspection
+        fprintf(cf_trace, "%u, %f\n", i, cf_all[175]);  // debug: dump one template's cf for inspection
         printf("win_cf: %f, template_id: %d\n", win_cf, win_temp);
     }
     ///////////////////////////////////////////////////
