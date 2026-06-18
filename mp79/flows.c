@@ -61,7 +61,7 @@ static uint32_t num_spikes = 0;
 static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
 
 #define CF_DUMP_N 2000000
-static float *cf_trace = NULL;     // one win_cf per processed sample
+//static float *cf_trace = NULL;     // one win_cf per processed sample
 
 //filter history variables - should be located in TCM for speed
 static float iir_x1[NCHAN];  // x[n-1] raw input
@@ -215,7 +215,7 @@ static inline int confirm_peak(SampleBuffer *sample, uint32_t *peak_end_head) {
 }
 
 int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
-                   uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i){
+                   uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i, FILE *cf_trace) {
     static float cf_all[NCLU], dot_all[NCLU];
 
     uint32_t end_head;
@@ -224,13 +224,20 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
 
     score_trig(sample, end_head, cf_all, dot_all);      // stage 2: 23-sample matched filter (only here)
     float win_cf = 0.0f;
-    for (int t = 0; t < NCLU; t++) if (cf_all[t] > win_cf) win_cf = cf_all[t];
-    if (i < (CF_DUMP_N + 72000000u)) cf_trace[i - 72000000u] = win_cf;
+    int win_temp = -1;
+    for (int t = 0; t < NCLU; t++) if (cf_all[t] > win_cf) {win_cf = cf_all[t]; win_temp = t;}
+    /////////////////////DEBUG/////////////////////////
+    printf("DEBUGGING - PRINTING WINNING CF AND TEMPLATE ID\n");
+    if (i >= CF_DUMP_N && i <= CF_DUMP_N + 60000u) {
+        fwrite(&cf_all[175], sizeof(float), 1, cf_trace);  // debug: dump one template's cf for inspection
+        printf("win_cf: %f, template_id: %d\n", win_cf, win_temp);
+    }
+    ///////////////////////////////////////////////////
     // best eligible template: above threshold AND not refractory; skip (not break) the others
     int best_t[SHANK_NUM]; float best_cf[SHANK_NUM], best_dot[SHANK_NUM];
     for (int sh = 0; sh < SHANK_NUM; sh++) { best_t[sh] = -1; best_cf[sh] = 0.0f; best_dot[sh] = 0.0f; }
     for (int t = 0; t < NCLU; t++) {
-        if (cf_all[t] <= TH_LEARNED_SQ)                continue;
+        if (cf_all[t] <= TH_LEARNED_SQ) continue;
         if (peak_i - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
         int shank = (int)spatial_template_groups[t];
         if (cf_all[t] > best_cf[shank]) { best_cf[shank]=cf_all[t]; best_dot[shank]=dot_all[t]; best_t[shank]=t; }
@@ -293,6 +300,9 @@ int main() {
     char filename[] = "/data/mP79/dat/mP79_17/mP79_17.dat";
     char results_dir[] = "/data/results/mP79_res/flows_c";
 
+    /////////////////////DEBUG/////////////////////////
+    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/cf_trace.txt", "w");
+
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");
     if (!fptr) { fprintf(stderr, "Error opening binary file\n"); return -1; }
@@ -321,10 +331,10 @@ int main() {
     for (int t = 125; t < NCLU; t++)
         printf("Wall_nm[%d] = %f\n", t, Wall_nm_23[t]);
     
-    cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
-    if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
+    //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
+    //if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
 
-    for (uint32_t i = 0; i < binary_size; i++) {
+    for (uint32_t i = 0; i < 72120010; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
@@ -337,7 +347,7 @@ int main() {
             break;
         }
         // DEBUG: export last 100 preprocessed samples
-        if (i == 600*60000 + 30000) {
+        if (i >= CF_DUMP_N && i <= CF_DUMP_N + 60000u) {
             uint32_t abs_i = i + (uint32_t)start_sample;
             for (int c = 0; c < NCHAN; c++) {
                 printf("SAMPLE %u CHAN %d: %f\n", abs_i, c,
@@ -345,7 +355,7 @@ int main() {
             }
         } 
         if (i < (nt - 1)) {continue;}
-        int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, abs_i);
+        int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, abs_i, cf_trace);
         if (i % 100000 == 0) {
             printf("Processed %u batches... out of %u\n", i, (uint32_t)(binary_size));
         }
@@ -387,7 +397,7 @@ int main() {
     save_npy(amp_file,   amplitudes,      num_spikes, sizeof(double),  "<f8");
 
     save_npy("/data/results/mP79_res/flows_c/debug/cf_trace.npy", cf_trace, CF_DUMP_N, sizeof(float), "<f4");
-    free(cf_trace);    
+    fclose(cf_trace);
     // 5. Clean up RAM
     free(spike_times);
     free(spike_templates);
