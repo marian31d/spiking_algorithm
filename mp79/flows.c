@@ -7,18 +7,16 @@
 
 // Include array hearder files for configuration 
 #include "Wall.h"
-#include "Wall_nm_23.h"  //#include "Wall_nm.h" 
+#include "Wall_nm.h"  //#include "Wall_nm.h" 
 #include "Wrot.h"
 #include "iir_weights.h"
 #include "wPCA.h"
-#include "spatial_template_groups.h"
 
 #define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
 
-#define SHANK_NUM 11
 #define NCHAN_BIN 128
 #define NCHAN 124
-#define NCLU 131        //Number of clusters, should be configured on the RAM
+#define NCLU 177        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 
@@ -34,7 +32,7 @@
 #define NT_TRIG 23               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
 #define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
-#define ENABLE_PEEL_SUBTRACT 0
+#define ENABLE_PEEL_SUBTRACT 1
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
@@ -60,7 +58,7 @@ static uint32_t num_spikes = 0;
 
 static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
 
-#define CF_DUMP_N 2000000
+#define CF_DUMP_N 72000000
 //static float *cf_trace = NULL;     // one win_cf per processed sample
 
 //filter history variables - should be located in TCM for speed
@@ -188,7 +186,7 @@ static inline void score_trig(SampleBuffer *sample, uint32_t end_head,
                 dot += pc[c][p] * Wall[t*(NCHAN*NPCS) + c*NPCS + p];
         dot_all[t] = dot;
         float r = RELU(dot);
-        cf_all[t] = (r*r) / Wall_nm_23[t];               // truncated norm, NOT Wall_nm
+        cf_all[t] = (r*r) / Wall_nm[t];               // truncated norm, NOT Wall_nm
     }
 }
 
@@ -227,33 +225,37 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     int win_temp = -1;
     for (int t = 0; t < NCLU; t++) if (cf_all[t] > win_cf) {win_cf = cf_all[t]; win_temp = t;}
     /////////////////////DEBUG/////////////////////////
-    printf("DEBUGGING - PRINTING WINNING CF AND TEMPLATE ID\n");
     if (i >= CF_DUMP_N && i <= CF_DUMP_N + 60000u) {
-        fprintf(cf_trace, "%u, %f\n", i, cf_all[175]);  // debug: dump one template's cf for inspection
-        printf("win_cf: %f, template_id: %d\n", win_cf, win_temp);
+        fprintf(cf_trace, "%u, %f\n", i, cf_all[90]);  // debug: dump one template's cf for inspection
+        printf("sample: %u, win_cf: %f, template_id: %d\n", i, win_cf, win_temp);
     }
     ///////////////////////////////////////////////////
     // best eligible template: above threshold AND not refractory; skip (not break) the others
-    int best_t[SHANK_NUM]; float best_cf[SHANK_NUM], best_dot[SHANK_NUM];
-    for (int sh = 0; sh < SHANK_NUM; sh++) { best_t[sh] = -1; best_cf[sh] = 0.0f; best_dot[sh] = 0.0f; }
+    int best_t=-1; float best_cf=0.0f, best_dot=0.0f;
     for (int t = 0; t < NCLU; t++) {
-        if (cf_all[t] <= TH_LEARNED_SQ) continue;
+        if (cf_all[t] <= TH_LEARNED_SQ)                continue;
         if (peak_i - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
-        int shank = (int)spatial_template_groups[t];
-        if (cf_all[t] > best_cf[shank]) { best_cf[shank]=cf_all[t]; best_dot[shank]=dot_all[t]; best_t[shank]=t; }
+        if (cf_all[t] > best_cf) { best_cf=cf_all[t]; best_dot=dot_all[t]; best_t=t; }
     }
-    float amp[SHANK_NUM];
-    for(int sh = 0; sh < SHANK_NUM; sh++) {
-        if (best_t[sh] < 0) continue;  
-        amp[sh] = best_dot[sh] / Wall_nm_23[best_t[sh]];
-        if (*spike_count < 2*(*data_size)) {
-            spike_results[*spike_count].absolute_time = peak_i;
-            spike_results[*spike_count].template_id   = (uint16_t)best_t[sh];
-            spike_results[*spike_count].score         = amp[sh];
-            (*spike_count)++;
+    if (best_t < 0) return 0;
+    float amp = best_dot / Wall_nm[best_t];
+    if (*spike_count < 2*(*data_size)) {
+        spike_results[*spike_count].absolute_time = peak_i;
+        spike_results[*spike_count].template_id   = (uint16_t)best_t;
+        spike_results[*spike_count].score         = amp;
+        (*spike_count)++;
+    }
+//need to align the peel with the reconstructed template, so ned to check when the score triggers a peak.
+#if ENABLE_PEEL_SUBTRACT
+    for (int c = 0; c < NCHAN; c++)
+        for (int ts = 0; ts < nt; ts++) {
+            float recon = 0.0f;
+            for (int p = 0; p < NPCS; p++)
+                recon += Wall[win_temp*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
+            sample->raw_data[(peak_i - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
         }
-        last_commit_i[best_t[sh]] = peak_i;
-    }
+#endif
+    last_commit_i[best_t] = peak_i;
     return 0;
 }
 
@@ -301,7 +303,7 @@ int main() {
     char results_dir[] = "/data/results/mP79_res/flows_c";
 
     /////////////////////DEBUG/////////////////////////
-    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/cf_trace.txt", "w");
+    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/debug/cf_trace.txt", "w");
 
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");
@@ -329,12 +331,12 @@ int main() {
 
     // Add temporarily in main, before the loop:
     for (int t = 125; t < NCLU; t++)
-        printf("Wall_nm[%d] = %f\n", t, Wall_nm_23[t]);
+        printf("Wall_nm[%d] = %f\n", t, Wall_nm[t]);
     
     //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
     //if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
 
-    for (uint32_t i = 0; i < 72120010; i++) {
+    for (uint32_t i = 0; i < 120010; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
@@ -347,11 +349,11 @@ int main() {
             break;
         }
         // DEBUG: export last 100 preprocessed samples
-        if (i >= CF_DUMP_N && i <= CF_DUMP_N + 60000u) {
+        if (abs_i >= CF_DUMP_N && abs_i <= CF_DUMP_N + 60000u) {
             uint32_t abs_i = i + (uint32_t)start_sample;
             for (int c = 0; c < NCHAN; c++) {
-                printf("SAMPLE %u CHAN %d: %f\n", abs_i, c,
-                    sample.raw_data[sample.head][c]);
+                //printf("SAMPLE %u CHAN %d: %f\n", abs_i, c,
+                //    sample.raw_data[sample.head][c]);
             }
         } 
         if (i < (nt - 1)) {continue;}
