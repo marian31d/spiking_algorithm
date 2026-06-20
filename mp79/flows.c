@@ -304,6 +304,7 @@ int main() {
 
     /////////////////////DEBUG/////////////////////////
     FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/debug/cf_trace.txt", "w");
+    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/debug/data_trace.txt", "w");
 
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");
@@ -350,12 +351,10 @@ int main() {
         }
         // DEBUG: export last 100 preprocessed samples
         if (abs_i >= CF_DUMP_N && abs_i <= CF_DUMP_N + 60000u) {
-            uint32_t abs_i = i + (uint32_t)start_sample;
             for (int c = 0; c < NCHAN; c++) {
-                //printf("SAMPLE %u CHAN %d: %f\n", abs_i, c,
-                //    sample.raw_data[sample.head][c]);
+                fprintf(data_trace, "%u, %f\n", abs_i, sample.raw_data[sample.head][c]);  // debug: dump one template's cf for inspection
             }
-        } 
+        }
         if (i < (nt - 1)) {continue;}
         int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, abs_i, cf_trace);
         if (i % 100000 == 0) {
