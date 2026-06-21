@@ -221,13 +221,16 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     uint32_t peak_i = (i >= 3) ? (i - 3) : 0;           // spike time = confirmed peak
 
     score_trig(sample, end_head, cf_all, dot_all);      // stage 2: 23-sample matched filter (only here)
+    /////////////////////DEBUG/////////////////////////
     float win_cf = 0.0f;
     int win_temp = -1;
     for (int t = 0; t < NCLU; t++) if (cf_all[t] > win_cf) {win_cf = cf_all[t]; win_temp = t;}
-    /////////////////////DEBUG/////////////////////////
     if (i >= CF_DUMP_N && i <= CF_DUMP_N + 60000u) {
-        fprintf(cf_trace, "%u, %f\n", i, cf_all[90]);  // debug: dump one template's cf for inspection
-        printf("sample: %u, win_cf: %f, template_id: %d\n", i, win_cf, win_temp);
+        for (int t=0; t < NCLU; t++){
+            fprintf(cf_trace, "%u, %f\n", i, cf_all[t]);  // debug: dump one template's cf for inspection
+            printf("sample: %u, win_cf: %f, template_id: %d\n", i, win_cf, win_temp);
+        }
+        
     }
     ///////////////////////////////////////////////////
     // best eligible template: above threshold AND not refractory; skip (not break) the others
