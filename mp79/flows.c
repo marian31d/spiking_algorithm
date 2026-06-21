@@ -7,8 +7,8 @@
 
 // Include array hearder files for configuration 
 #include "Wall.h"
-#include "Wall_nm.h"  //#include "Wall_nm.h" 
-#include "Wrot.h"
+#include "Wall_nm_23.h"  //#include "Wall_nm.h" 
+#include "Wsh_per_batch.h"
 #include "iir_weights.h"
 #include "wPCA.h"
 
@@ -16,7 +16,7 @@
 
 #define NCHAN_BIN 128
 #define NCHAN 124
-#define NCLU 177        //Number of clusters, should be configured on the RAM
+#define NCLU 454        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 
@@ -32,7 +32,7 @@
 #define NT_TRIG 23               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
 #define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
-#define ENABLE_PEEL_SUBTRACT 1
+#define ENABLE_PEEL_SUBTRACT 0
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
@@ -152,12 +152,12 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
 
     // 3. Whitening
     int batch_idx = i / BATCH_SIZE; //debug: dshift for all batches
-    //const float *Wsh_curr = &Wsh_per_batch[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
+    const float *Wsh_curr = &Wsh_per_batch[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
     float whitened_temp[NCHAN];
     for (int w = 0; w < NCHAN; w++) {
         float sum = 0.0f; 
         for (int c = 0; c < NCHAN; c++) {
-            sum += sample->raw_data[h][c] * Wrot[w * NCHAN + c];
+            sum += sample->raw_data[h][c] * Wsh_curr[w * NCHAN + c];
         }
         whitened_temp[w] = sum;
     }
@@ -186,7 +186,7 @@ static inline void score_trig(SampleBuffer *sample, uint32_t end_head,
                 dot += pc[c][p] * Wall[t*(NCHAN*NPCS) + c*NPCS + p];
         dot_all[t] = dot;
         float r = RELU(dot);
-        cf_all[t] = (r*r) / Wall_nm[t];               // truncated norm, NOT Wall_nm
+        cf_all[t] = (r*r) / Wall_nm_23[t];               // truncated norm, NOT Wall_nm
     }
 }
 
@@ -197,14 +197,14 @@ static inline int confirm_peak(SampleBuffer *sample, uint32_t *peak_end_head) {
     uint32_t pk = (h - 3) & RING_MASK;          // candidate peak (3 samples ago)
     uint32_t a  = (h - 2) & RING_MASK;          // after
     uint32_t b  = (h - 4) & RING_MASK;          // before
-    uint32_t d  = (h - 1) & RING_MASK;          // before before
+    //uint32_t d  = (h - 1) & RING_MASK;          // before before
 
     float vpk=0, va=0, vb=0, vd=0;
     for (int c = 0; c < NCHAN; c++) {
         float x=fabsf(sample->raw_data[pk][c]); if(x>vpk)vpk=x;
         float y=fabsf(sample->raw_data[a][c]); if(y>va)va=y;
         float z=fabsf(sample->raw_data[b][c]); if(z>vb)vb=z;
-        float w=fabsf(sample->raw_data[d][c]); if(w>vd)vd=w;
+        //float w=fabsf(sample->raw_data[d][c]); if(w>vd)vd=w;
     }
     if (vpk < V_TH) return 0;                    // not big enough
     if (!(vpk >= va && vpk >= vb && vpk >= vd)) return 0;     // not a local magnitude max
@@ -225,7 +225,7 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     float win_cf = 0.0f;
     int win_temp = -1;
     for (int t = 0; t < NCLU; t++) if (cf_all[t] > win_cf) {win_cf = cf_all[t]; win_temp = t;}
-    if (i >= CF_DUMP_N && i <= CF_DUMP_N + 60000u) {
+    if (i >= CF_DUMP_N && i <= CF_DUMP_N + 1000u) {
         for (int t=0; t < NCLU; t++){
             fprintf(cf_trace, "%u, %f\n", i, cf_all[t]);  // debug: dump one template's cf for inspection
             printf("sample: %u, win_cf: %f, template_id: %d\n", i, win_cf, win_temp);
@@ -241,7 +241,7 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         if (cf_all[t] > best_cf) { best_cf=cf_all[t]; best_dot=dot_all[t]; best_t=t; }
     }
     if (best_t < 0) return 0;
-    float amp = best_dot / Wall_nm[best_t];
+    float amp = best_dot / Wall_nm_23[best_t];
     if (*spike_count < 2*(*data_size)) {
         spike_results[*spike_count].absolute_time = peak_i;
         spike_results[*spike_count].template_id   = (uint16_t)best_t;
@@ -335,12 +335,12 @@ int main() {
 
     // Add temporarily in main, before the loop:
     for (int t = 125; t < NCLU; t++)
-        printf("Wall_nm[%d] = %f\n", t, Wall_nm[t]);
+        printf("Wall_nm[%d] = %f\n", t, Wall_nm_23[t]);
     
     //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
     //if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
-
-    for (uint32_t i = 0; i < 120010; i++) {
+//120010
+    for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
@@ -353,7 +353,7 @@ int main() {
             break;
         }
         // DEBUG: export last 100 preprocessed samples
-        if (abs_i >= CF_DUMP_N && abs_i <= CF_DUMP_N + 60000u) {
+        if (abs_i >= CF_DUMP_N && abs_i <= CF_DUMP_N + 1000u) {
             for (int c = 0; c < NCHAN; c++) {
                 fprintf(data_trace, "%u, %f\n", abs_i, sample.raw_data[sample.head][c]);  // debug: dump one template's cf for inspection
             }
@@ -369,7 +369,7 @@ int main() {
     
     printf("Processing complete. Detected %u spikes.\nSaving results in Kilosort format...\n", num_spikes);
     
-           
+    
     // 1. Allocate flat arrays for Kilosort output types
     // Note: Kilosort prefers int64 for time, int32 for templates, and float64 for amplitudes
     int64_t *spike_times    = (int64_t *)malloc(num_spikes * sizeof(int64_t));
