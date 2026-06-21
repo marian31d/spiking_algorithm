@@ -7,7 +7,7 @@
 
 // Include array hearder files for configuration 
 #include "Wall.h"
-#include "Wall_nm_23.h"  //#include "Wall_nm.h" 
+#include "Wall_nm.h"  //#include "Wall_nm.h" 
 #include "Wsh_per_batch.h"
 #include "iir_weights.h"
 #include "wPCA.h"
@@ -19,7 +19,7 @@
 #define NCLU 454        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
-
+#define LAG 3
 #define FS 20000
 #define nt 61
 #define RB 128       //ring buffer length prev 64
@@ -29,7 +29,7 @@
 #define BATCH_SIZE 60000
 #define REFRACTORY_SAMPLES 20
 
-#define NT_TRIG 23               // 20 pre-peak + peak + 2  (peak at nt0min=20)
+#define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
 #define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
 #define ENABLE_PEEL_SUBTRACT 0
@@ -107,22 +107,6 @@ int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
     return 0; // Success! Reached the end of the 61 rows normally.
 }
 
-// k-th smallest (0-indexed), reorders buf in place
-static float kth_smallest(float *buf, int n, int k) {
-    int lo = 0, hi = n - 1;
-    while (lo < hi) {
-        float p = buf[(lo + hi) >> 1];
-        int i = lo, j = hi;
-        while (i <= j) {
-            while (buf[i] < p) i++;
-            while (buf[j] > p) j--;
-            if (i <= j) { float t = buf[i]; buf[i] = buf[j]; buf[j] = t; i++; j--; }
-        }
-        if (k <= j) hi = j; else if (k >= i) lo = i; else break;
-    }
-    return buf[k];
-}
-
 int filter_sample(SampleBuffer *sample, uint32_t i) {
     uint32_t h = sample->head;
 
@@ -169,14 +153,14 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
     printf("\n"); */
     return(0);
 }
-static inline void score_trig(SampleBuffer *sample, uint32_t end_head,
-                              float *cf_all, float *dot_all) {
+static inline void score_at(SampleBuffer *sample, uint32_t head_at,
+                            float *cf_all, float *dot_all) {
     float pc[NCHAN][NPCS];
     for (int c = 0; c < NCHAN; c++)
         for (int p = 0; p < NPCS; p++) {
             float s = 0.0f;
-            for (int k = 0; k < NT_TRIG; k++)            // only 23 taps
-                s += sample->raw_data[(end_head - (NT_TRIG-1-k)) & RING_MASK][c] * wPCA[p*nt + k];
+            for (int k = 0; k < NT_TRIG; k++)            // 23 taps, causal, newest = wPCA[22]
+                s += sample->raw_data[(head_at - (NT_TRIG-1-k)) & RING_MASK][c] * wPCA[p*nt + k];
             pc[c][p] = s;
         }
     for (int t = 0; t < NCLU; t++) {
@@ -186,79 +170,91 @@ static inline void score_trig(SampleBuffer *sample, uint32_t end_head,
                 dot += pc[c][p] * Wall[t*(NCHAN*NPCS) + c*NPCS + p];
         dot_all[t] = dot;
         float r = RELU(dot);
-        cf_all[t] = (r*r) / Wall_nm_23[t];               // truncated norm, NOT Wall_nm
+        cf_all[t] = (r*r) / Wall_nm[t];
     }
 }
 
 // static inline suggests the compiler inline the assembly to avoid call overhead
 // returns 1 and sets *peak_end_head if a magnitude peak is CONFIRMED 3 samples back
-static inline int confirm_peak(SampleBuffer *sample, uint32_t *peak_end_head) {
+static inline int confirm_peak_evt(SampleBuffer *sample, uint32_t *end_center) {
     uint32_t h  = sample->head;
-    uint32_t pk = (h - 3) & RING_MASK;          // candidate peak (3 samples ago)
-    uint32_t a  = (h - 2) & RING_MASK;          // after
-    uint32_t b  = (h - 4) & RING_MASK;          // before
-    //uint32_t d  = (h - 1) & RING_MASK;          // before before
-
-    float vpk=0, va=0, vb=0, vd=0;
+    uint32_t pk = (h - (3 + LAG)) & RING_MASK;     // candidate peak, shifted for lookahead
+    uint32_t a  = (h - (2 + LAG)) & RING_MASK;     // after peak
+    uint32_t b  = (h - (4 + LAG)) & RING_MASK;     // before peak
     for (int c = 0; c < NCHAN; c++) {
-        float x=fabsf(sample->raw_data[pk][c]); if(x>vpk)vpk=x;
-        float y=fabsf(sample->raw_data[a][c]); if(y>va)va=y;
-        float z=fabsf(sample->raw_data[b][c]); if(z>vb)vb=z;
-        //float w=fabsf(sample->raw_data[d][c]); if(w>vd)vd=w;
+        float vpk = fabsf(sample->raw_data[pk][c]);
+        if (vpk < V_TH) continue;
+        float va = fabsf(sample->raw_data[a][c]);
+        float vb = fabsf(sample->raw_data[b][c]);
+        if (vpk >= va && vpk >= vb) {              // local magnitude max on this channel
+            *end_center = (h - (1 + LAG)) & RING_MASK;   // = pk + 2
+            return 1;
+        }
     }
-    if (vpk < V_TH) return 0;                    // not big enough
-    if (!(vpk >= va && vpk >= vb && vpk >= vd)) return 0;     // not a local magnitude max
-    *peak_end_head = (h - 1) & RING_MASK;        // window ends at peak+2 -> covers [peak-20, peak+2]
-    return 1;
+    return 0;
 }
 
 int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
                    uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i, FILE *cf_trace) {
-    static float cf_all[NCLU], dot_all[NCLU];
+    static float cf_best[NCLU], dot_best[NCLU];
+    static int   lag_best[NCLU];
+    static float cf_tmp[NCLU],  dot_tmp[NCLU];
 
-    uint32_t end_head;
-    if (!confirm_peak(sample, &end_head)) return 0;     // stage 1: cheap voltage gate
-    uint32_t peak_i = (i >= 3) ? (i - 3) : 0;           // spike time = confirmed peak
+    uint32_t end_center;
+    if (!confirm_peak_evt(sample, &end_center)) return 0;     // stage 1: per-channel gate
 
-    score_trig(sample, end_head, cf_all, dot_all);      // stage 2: 23-sample matched filter (only here)
+    for (int t = 0; t < NCLU; t++) cf_best[t] = -1.0f;
+
+    // stage 2: lag search — project+score at each offset, keep per-template max
+    for (int d = -LAG; d <= LAG; d++) {
+        uint32_t head_at = (end_center + d) & RING_MASK;      // always <= head, never future
+        score_at(sample, head_at, cf_tmp, dot_tmp);
+        for (int t = 0; t < NCLU; t++)
+            if (cf_tmp[t] > cf_best[t]) { cf_best[t]=cf_tmp[t]; dot_best[t]=dot_tmp[t]; lag_best[t]=d; }
+    }
+
+    uint32_t base_peak = (i >= (uint32_t)(3 + LAG)) ? (i - (3 + LAG)) : 0;   // lag-0 peak, absolute
+
     /////////////////////DEBUG/////////////////////////
-    float win_cf = 0.0f;
-    int win_temp = -1;
-    for (int t = 0; t < NCLU; t++) if (cf_all[t] > win_cf) {win_cf = cf_all[t]; win_temp = t;}
+    float win_cf = 0.0f; int win_temp = -1;
+    for (int t = 0; t < NCLU; t++) if (cf_best[t] > win_cf) { win_cf = cf_best[t]; win_temp = t; }
     if (i >= CF_DUMP_N && i <= CF_DUMP_N + 1000u) {
-        for (int t=0; t < NCLU; t++){
-            fprintf(cf_trace, "%u, %f\n", i, cf_all[t]);  // debug: dump one template's cf for inspection
-            printf("sample: %u, win_cf: %f, template_id: %d\n", i, win_cf, win_temp);
-        }
-        
+        for (int t = 0; t < NCLU; t++)
+            fprintf(cf_trace, "%u, %f\n", i, cf_best[t]);
+        printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
+               i, win_cf, win_temp, win_temp >= 0 ? lag_best[win_temp] : 0);
     }
     ///////////////////////////////////////////////////
-    // best eligible template: above threshold AND not refractory; skip (not break) the others
-    int best_t=-1; float best_cf=0.0f, best_dot=0.0f;
+
+    // best eligible template: above threshold AND not refractory (per-template peak time)
+    int best_t = -1; float best_cf = 0.0f, best_dot = 0.0f; uint32_t best_peak = base_peak;
     for (int t = 0; t < NCLU; t++) {
-        if (cf_all[t] <= TH_LEARNED_SQ)                continue;
-        if (peak_i - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
-        if (cf_all[t] > best_cf) { best_cf=cf_all[t]; best_dot=dot_all[t]; best_t=t; }
+        if (cf_best[t] <= TH_LEARNED_SQ) continue;
+        uint32_t peak_t = base_peak + lag_best[t];
+        if (peak_t - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
+        if (cf_best[t] > best_cf) { best_cf=cf_best[t]; best_dot=dot_best[t]; best_t=t; best_peak=peak_t; }
     }
     if (best_t < 0) return 0;
-    float amp = best_dot / Wall_nm_23[best_t];
+
+    float amp = best_dot / Wall_nm[best_t];
     if (*spike_count < 2*(*data_size)) {
-        spike_results[*spike_count].absolute_time = peak_i;
+        spike_results[*spike_count].absolute_time = best_peak;
         spike_results[*spike_count].template_id   = (uint16_t)best_t;
         spike_results[*spike_count].score         = amp;
         (*spike_count)++;
     }
-//need to align the peel with the reconstructed template, so ned to check when the score triggers a peak.
+
 #if ENABLE_PEEL_SUBTRACT
     for (int c = 0; c < NCHAN; c++)
         for (int ts = 0; ts < nt; ts++) {
             float recon = 0.0f;
             for (int p = 0; p < NPCS; p++)
-                recon += Wall[win_temp*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
-            sample->raw_data[(peak_i - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
+                recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
+            sample->raw_data[(best_peak - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
         }
 #endif
-    last_commit_i[best_t] = peak_i;
+
+    last_commit_i[best_t] = best_peak;
     return 0;
 }
 
@@ -335,7 +331,7 @@ int main() {
 
     // Add temporarily in main, before the loop:
     for (int t = 125; t < NCLU; t++)
-        printf("Wall_nm[%d] = %f\n", t, Wall_nm_23[t]);
+        printf("Wall_nm[%d] = %f\n", t, Wall_nm[t]);
     
     //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
     //if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
