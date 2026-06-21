@@ -107,6 +107,22 @@ int dma_read_block(FILE *fptr, uint32_t i, SampleBuffer *sample) {
     return 0; // Success! Reached the end of the 61 rows normally.
 }
 
+// k-th smallest (0-indexed), reorders buf in place
+static float kth_smallest(float *buf, int n, int k) {
+    int lo = 0, hi = n - 1;
+    while (lo < hi) {
+        float p = buf[(lo + hi) >> 1];
+        int i = lo, j = hi;
+        while (i <= j) {
+            while (buf[i] < p) i++;
+            while (buf[j] > p) j--;
+            if (i <= j) { float t = buf[i]; buf[i] = buf[j]; buf[j] = t; i++; j--; }
+        }
+        if (k <= j) hi = j; else if (k >= i) lo = i; else break;
+    }
+    return buf[k];
+}
+
 int filter_sample(SampleBuffer *sample, uint32_t i) {
     uint32_t h = sample->head;
 
