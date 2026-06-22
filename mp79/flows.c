@@ -31,8 +31,19 @@
 
 #define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
+#define WIN_END_OFFSET (NT_TRIG - 1 - PEAK_OFFSET)   // 61-1-20 = 40  (was 2 when NT_TRIG=23)
 #define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
 #define ENABLE_PEEL_SUBTRACT 0
+
+// cyclic cache of cf-arrays keyed by absolute window-end time
+#define CC 16
+#define CC_MASK (CC - 1)
+static uint32_t cc_time[CC];          // abs time held in each slot (0 = empty; real times ~72e6)
+static float    cc_cf[CC][NCLU];      // cf array for that time
+
+//DEBUG
+#define CF_DUMP_N 72000000
+//static float *cf_trace = NULL;     // one win_cf per processed sample
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
@@ -58,8 +69,6 @@ static uint32_t num_spikes = 0;
 
 static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
 
-#define CF_DUMP_N 72000000
-//static float *cf_trace = NULL;     // one win_cf per processed sample
 
 //filter history variables - should be located in TCM for speed
 static float iir_x1[NCHAN];  // x[n-1] raw input
@@ -190,20 +199,31 @@ static inline void score_at(SampleBuffer *sample, uint32_t head_at,
     }
 }
 
+// returns cf array for abs time T; computes only on a miss
+static inline float* cf_for(SampleBuffer *sample, uint32_t head_at, uint32_t T) {
+    uint32_t s = T & CC_MASK;
+    if (cc_time[s] != T) {            // miss → compute once, store
+        float dot_scratch[NCLU];
+        score_at(sample, head_at, cc_cf[s], dot_scratch);
+        cc_time[s] = T;
+    }
+    return cc_cf[s];                  // hit or freshly filled
+}
+
 // static inline suggests the compiler inline the assembly to avoid call overhead
 // returns 1 and sets *peak_end_head if a magnitude peak is CONFIRMED 3 samples back
 static inline int confirm_peak_evt(SampleBuffer *sample, uint32_t *end_center) {
     uint32_t h  = sample->head;
-    uint32_t pk = (h - (3 + LAG)) & RING_MASK;     // candidate peak, shifted for lookahead
-    uint32_t a  = (h - (2 + LAG)) & RING_MASK;     // after peak
-    uint32_t b  = (h - (4 + LAG)) & RING_MASK;     // before peak
+    uint32_t pk = (h - (WIN_END_OFFSET + 1 + LAG)) & RING_MASK;   // was h-(3+LAG)
+    uint32_t a  = (pk + 1) & RING_MASK;     // after peak
+    uint32_t b  = (pk - 1) & RING_MASK;     // before peak
     for (int c = 0; c < NCHAN; c++) {
         float vpk = fabsf(sample->raw_data[pk][c]);
         if (vpk < V_TH) continue;
         float va = fabsf(sample->raw_data[a][c]);
         float vb = fabsf(sample->raw_data[b][c]);
-        if (vpk >= va && vpk >= vb) {              // local magnitude max on this channel
-            *end_center = (h - (1 + LAG)) & RING_MASK;   // = pk + 2
+        if (vpk >= va && vpk >= vb) {
+            *end_center = (pk + WIN_END_OFFSET) & RING_MASK;       // window ends 40 past peak
             return 1;
         }
     }
@@ -222,14 +242,16 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     for (int t = 0; t < NCLU; t++) cf_best[t] = -1.0f;
 
     // stage 2: lag search — project+score at each offset, keep per-template max
+    uint32_t T0 = (i >= (uint32_t)(1 + LAG)) ? (i - (1 + LAG)) : 0;   // abs window-end at lag 0
+    for (int t = 0; t < NCLU; t++) cf_best[t] = -1.0f;
     for (int d = -LAG; d <= LAG; d++) {
-        uint32_t head_at = (end_center + d) & RING_MASK;      // always <= head, never future
-        score_at(sample, head_at, cf_tmp, dot_tmp);
+        uint32_t head_at = (end_center + d) & RING_MASK;
+        float *cf = cf_for(sample, head_at, T0 + (uint32_t)d);    // computed once across triggers
         for (int t = 0; t < NCLU; t++)
-            if (cf_tmp[t] > cf_best[t]) { cf_best[t]=cf_tmp[t]; dot_best[t]=dot_tmp[t]; lag_best[t]=d; }
+            if (cf[t] > cf_best[t]) { cf_best[t] = cf[t]; lag_best[t] = d; }
     }
 
-    uint32_t base_peak = (i >= (uint32_t)(3 + LAG)) ? (i - (3 + LAG)) : 0;   // lag-0 peak, absolute
+    uint32_t base_peak = (i >= (uint32_t)(WIN_END_OFFSET + 1 + LAG)) ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0;
 
     /////////////////////DEBUG/////////////////////////
     float win_cf = 0.0f; int win_temp = -1;
