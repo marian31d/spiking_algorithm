@@ -33,13 +33,14 @@
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
 #define WIN_END_OFFSET (NT_TRIG - 1 - PEAK_OFFSET)   // 61-1-20 = 40  (was 2 when NT_TRIG=23)
 #define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
-#define ENABLE_PEEL_SUBTRACT 0
+#define ENABLE_PEEL_SUBTRACT 1
 
 // cyclic cache of cf-arrays keyed by absolute window-end time
 #define CC 16
 #define CC_MASK (CC - 1)
-static uint32_t cc_time[CC];          // abs time held in each slot (0 = empty; real times ~72e6)
-static float    cc_cf[CC][NCLU];      // cf array for that time
+static uint32_t cc_time[CC];
+static float    cc_cf[CC][NCLU];
+static float    cc_dot[CC][NCLU];     // ADD: cache dot too
 
 //DEBUG
 #define CF_DUMP_N 72000000
@@ -184,7 +185,7 @@ static inline void score_at(SampleBuffer *sample, uint32_t head_at,
     for (int c = 0; c < NCHAN; c++)
         for (int p = 0; p < NPCS; p++) {
             float s = 0.0f;
-            for (int k = 0; k < NT_TRIG; k++)            // 23 taps, causal, newest = wPCA[22]
+            for (int k = 0; k < NT_TRIG; k++)
                 s += sample->raw_data[(head_at - (NT_TRIG-1-k)) & RING_MASK][c] * wPCA[p*nt + k];
             pc[c][p] = s;
         }
@@ -200,14 +201,15 @@ static inline void score_at(SampleBuffer *sample, uint32_t head_at,
 }
 
 // returns cf array for abs time T; computes only on a miss
-static inline float* cf_for(SampleBuffer *sample, uint32_t head_at, uint32_t T) {
+static inline void cf_for(SampleBuffer *sample, uint32_t head_at, uint32_t T,
+                          float **cf_out, float **dot_out) {
     uint32_t s = T & CC_MASK;
-    if (cc_time[s] != T) {            // miss → compute once, store
-        float dot_scratch[NCLU];
-        score_at(sample, head_at, cc_cf[s], dot_scratch);
+    if (cc_time[s] != T) {
+        score_at(sample, head_at, cc_cf[s], cc_dot[s]);   // both, no scratch discard
         cc_time[s] = T;
     }
-    return cc_cf[s];                  // hit or freshly filled
+    *cf_out  = cc_cf[s];
+    *dot_out = cc_dot[s];
 }
 
 // static inline suggests the compiler inline the assembly to avoid call overhead
@@ -234,65 +236,78 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
                    uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i, FILE *cf_trace) {
     static float cf_best[NCLU], dot_best[NCLU];
     static int   lag_best[NCLU];
-    static float cf_tmp[NCLU],  dot_tmp[NCLU];
 
     uint32_t end_center;
-    if (!confirm_peak_evt(sample, &end_center)) return 0;     // stage 1: per-channel gate
+    if (!confirm_peak_evt(sample, &end_center)) return 0;          // stage 1: gate
 
-    for (int t = 0; t < NCLU; t++) cf_best[t] = -1.0f;
+    uint32_t T0        = (i >= (uint32_t)(1 + LAG)) ? (i - (1 + LAG)) : 0;
+    uint32_t base_peak = (i >= (uint32_t)(WIN_END_OFFSET + 1 + LAG))
+                         ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0;
 
-    // stage 2: lag search — project+score at each offset, keep per-template max
-    uint32_t T0 = (i >= (uint32_t)(1 + LAG)) ? (i - (1 + LAG)) : 0;   // abs window-end at lag 0
-    for (int t = 0; t < NCLU; t++) cf_best[t] = -1.0f;
-    for (int d = -LAG; d <= LAG; d++) {
-        uint32_t head_at = (end_center + d) & RING_MASK;
-        float *cf = cf_for(sample, head_at, T0 + (uint32_t)d);    // computed once across triggers
-        for (int t = 0; t < NCLU; t++)
-            if (cf[t] > cf_best[t]) { cf_best[t] = cf[t]; lag_best[t] = d; }
-    }
+    // matching-pursuit: detect strongest, subtract, re-detect on residual, up to MAX_PEELS
+    for (int peel = 0; peel < MAX_PEELS; peel++) {
 
-    uint32_t base_peak = (i >= (uint32_t)(WIN_END_OFFSET + 1 + LAG)) ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0;
+        // stage 2: lag search — recomputed each peel because data changed after subtraction
+        for (int t = 0; t < NCLU; t++) cf_best[t] = -1.0f;
+        for (int d = -LAG; d <= LAG; d++) {
+            uint32_t head_at = (end_center + d) & RING_MASK;
+            float *cf, *dot;
+            cf_for(sample, head_at, T0 + (uint32_t)d, &cf, &dot);  // computed once across triggers/peels
+            for (int t = 0; t < NCLU; t++)
+                if (cf[t] > cf_best[t]) { cf_best[t]=cf[t]; dot_best[t]=dot[t]; lag_best[t]=d; }
+        }
 
-    /////////////////////DEBUG/////////////////////////
-    float win_cf = 0.0f; int win_temp = -1;
-    for (int t = 0; t < NCLU; t++) if (cf_best[t] > win_cf) { win_cf = cf_best[t]; win_temp = t; }
-    if (i >= CF_DUMP_N && i <= CF_DUMP_N + 1000u) {
-        for (int t = 0; t < NCLU; t++)
-            fprintf(cf_trace, "%u, %f\n", i, cf_best[t]);
-        printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
-               i, win_cf, win_temp, win_temp >= 0 ? lag_best[win_temp] : 0);
-    }
-    ///////////////////////////////////////////////////
+        /////////////////////DEBUG (first peel pass only)/////////////////////
+        if (peel == 0 && i >= CF_DUMP_N && i <= CF_DUMP_N + 1000u) {
+            float win_cf = 0.0f; int win_temp = -1;
+            for (int t = 0; t < NCLU; t++) if (cf_best[t] > win_cf) { win_cf = cf_best[t]; win_temp = t; }
+            for (int t = 0; t < NCLU; t++)
+                fprintf(cf_trace, "%u, %f\n", i, cf_best[t]);
+            printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
+                   i, win_cf, win_temp, win_temp >= 0 ? lag_best[win_temp] : 0);
+        }
+        //////////////////////////////////////////////////////////////////////
 
-    // best eligible template: above threshold AND not refractory (per-template peak time)
-    int best_t = -1; float best_cf = 0.0f, best_dot = 0.0f; uint32_t best_peak = base_peak;
-    for (int t = 0; t < NCLU; t++) {
-        if (cf_best[t] <= TH_LEARNED_SQ) continue;
-        uint32_t peak_t = base_peak + lag_best[t];
-        if (peak_t - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
-        if (cf_best[t] > best_cf) { best_cf=cf_best[t]; best_dot=dot_best[t]; best_t=t; best_peak=peak_t; }
-    }
-    if (best_t < 0) return 0;
+        // best eligible template: above threshold AND not refractory (per-template peak time)
+        int best_t = -1; float best_cf = 0.0f, best_dot = 0.0f; int best_lag = 0;
+        uint32_t best_peak = base_peak;
+        for (int t = 0; t < NCLU; t++) {
+            if (cf_best[t] <= TH_LEARNED_SQ) continue;
+            uint32_t peak_t = base_peak + lag_best[t];
+            if (peak_t - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
+            if (cf_best[t] > best_cf) {
+                best_cf=cf_best[t]; best_dot=dot_best[t]; best_lag=lag_best[t];
+                best_t=t; best_peak=peak_t;
+            }
+        }
+        if (best_t < 0) return 0;                       // nothing eligible left at this location
 
-    float amp = best_dot / Wall_nm[best_t];
-    if (*spike_count < 2*(*data_size)) {
-        spike_results[*spike_count].absolute_time = best_peak;
-        spike_results[*spike_count].template_id   = (uint16_t)best_t;
-        spike_results[*spike_count].score         = amp;
-        (*spike_count)++;
-    }
+        float amp = best_dot / Wall_nm[best_t];          // single multiply: no sqrt, no divide
+
+        if (*spike_count < 2*(*data_size)) {
+            spike_results[*spike_count].absolute_time = best_peak;
+            spike_results[*spike_count].template_id   = (uint16_t)best_t;
+            spike_results[*spike_count].score         = amp;
+            (*spike_count)++;
+        }
+        last_commit_i[best_t] = best_peak;
 
 #if ENABLE_PEEL_SUBTRACT
-    for (int c = 0; c < NCHAN; c++)
-        for (int ts = 0; ts < nt; ts++) {
-            float recon = 0.0f;
-            for (int p = 0; p < NPCS; p++)
-                recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
-            sample->raw_data[(best_peak - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
-        }
+        // subtract at the SAME ring slots scoring read: head-relative window-end of the
+        // WINNING lag, not absolute best_peak. This cancels exactly the matched-filter energy.
+        uint32_t best_end = (end_center + best_lag) & RING_MASK;
+        for (int c = 0; c < NCHAN; c++)
+            for (int ts = 0; ts < nt; ts++) {
+                float recon = 0.0f;
+                for (int p = 0; p < NPCS; p++)
+                    recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
+                sample->raw_data[(best_end - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
+            }
+        for (int s = 0; s < CC; s++) cc_time[s] = 0;    // data changed -> invalidate cf/dot cache
+#else
+        break;                                          // no subtraction -> one detection per location
 #endif
-
-    last_commit_i[best_t] = best_peak;
+    }
     return 0;
 }
 
@@ -340,8 +355,8 @@ int main() {
     char results_dir[] = "/data/results/mP79_res/flows_c";
 
     /////////////////////DEBUG/////////////////////////
-    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/debug/cf_trace.txt", "w");
-    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/debug/data_trace.txt", "w");
+    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/peeling/cf_trace.txt", "w");
+    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/peeling/data_trace.txt", "w");
 
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");
@@ -425,9 +440,9 @@ int main() {
 
     // 3. Format the file paths
     char times_file[256], temp_file[256], amp_file[256];
-    snprintf(times_file, sizeof(times_file), "%s/debug/spike_times.npy", results_dir);
-    snprintf(temp_file,  sizeof(temp_file),  "%s/debug/spike_templates.npy", results_dir);
-    snprintf(amp_file,   sizeof(amp_file),   "%s/debug/amplitudes.npy", results_dir);
+    snprintf(times_file, sizeof(times_file), "%s/peeling/spike_times.npy", results_dir);
+    snprintf(temp_file,  sizeof(temp_file),  "%s/peeling/spike_templates.npy", results_dir);
+    snprintf(amp_file,   sizeof(amp_file),   "%s/peeling/amplitudes.npy", results_dir);
 
     // 4. Save as .npy using Little-Endian NumPy types (<i8, <i4, <f8)
     save_npy(times_file, spike_times,     num_spikes, sizeof(int64_t), "<i8");
