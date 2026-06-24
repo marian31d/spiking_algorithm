@@ -3,8 +3,8 @@ import numpy as np
 script for comparing online flows.py with biquad filter vs kilosort's IIR
 Need to run flows.py with BiquadFiltered class.
 """
-st_ks = np.load("old/st.npy")
-st_bq = np.load("st.npy")
+st_ks = np.load("/data/results/mS51_res/flows_final_shift/updated_dshift/gui-online-shift/FIR/st.npy")
+st_bq = np.load("/data/results/mS51_res/flows_final_shift/updated_dshift/gui-online-shift/IIR/st.npy")
 a = st_ks[np.argsort(st_ks[:,0])]        # (N,3): time, template, amp
 bb = st_bq[np.argsort(st_bq[:,0])]
 tb = bb[:,0]; tol = 5                      # samples
