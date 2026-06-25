@@ -23,7 +23,7 @@
 #define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
 
-#define NCHAN_BIN 63
+#define NCHAN_BIN 70
 #define NCHAN 62      //ring buffer length prev 64
 #define NCLU 232        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
