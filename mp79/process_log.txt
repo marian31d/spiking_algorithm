@@ -1,10 +1,611 @@
 Reading data from /data/mP79/dat/mP79_17/mP79_17.dat...
-Wall_nm[125] = 76.220779
-Wall_nm[126] = 49.469704
-Wall_nm[127] = 118.953911
-Wall_nm[128] = 74.484444
-Wall_nm[129] = 272.186157
-Wall_nm[130] = 212.081863
+Wall_nm[125] = 225.789337
+Wall_nm[126] = 126.326462
+Wall_nm[127] = 358.068359
+Wall_nm[128] = 108.216232
+Wall_nm[129] = 921.951660
+Wall_nm[130] = 95.198280
+Wall_nm[131] = 607.530334
+Wall_nm[132] = 122.046371
+Wall_nm[133] = 141.030991
+Wall_nm[134] = 479.647369
+Wall_nm[135] = 470.207367
+Wall_nm[136] = 571.716370
+Wall_nm[137] = 504.861908
+Wall_nm[138] = 158.750244
+Wall_nm[139] = 111.133713
+Wall_nm[140] = 466.868103
+Wall_nm[141] = 670.246399
+Wall_nm[142] = 155.313858
+Wall_nm[143] = 96.156418
+Wall_nm[144] = 154.166595
+Wall_nm[145] = 304.933533
+Wall_nm[146] = 413.255219
+Wall_nm[147] = 445.815887
+Wall_nm[148] = 118.748367
+Wall_nm[149] = 2384.242676
+Wall_nm[150] = 299.887512
+Wall_nm[151] = 307.781281
+Wall_nm[152] = 296.078247
+Wall_nm[153] = 321.945129
+Wall_nm[154] = 1673.435181
+Wall_nm[155] = 3429.150635
+Wall_nm[156] = 198.067169
+Wall_nm[157] = 261.949036
+Wall_nm[158] = 215.091797
+Wall_nm[159] = 113.673721
+Wall_nm[160] = 135.613770
+Wall_nm[161] = 153.668396
+Wall_nm[162] = 222.593567
+Wall_nm[163] = 324.299255
+Wall_nm[164] = 169.593277
+Wall_nm[165] = 105.330315
+Wall_nm[166] = 255.111877
+Wall_nm[167] = 185.102234
+Wall_nm[168] = 238.148346
+Wall_nm[169] = 453.368774
+Wall_nm[170] = 391.156250
+Wall_nm[171] = 99.288704
+Wall_nm[172] = 94.136505
+Wall_nm[173] = 153.633682
+Wall_nm[174] = 599.774902
+Wall_nm[175] = 132.592102
+Wall_nm[176] = 557.333801
+Wall_nm[177] = 494.605164
+Wall_nm[178] = 2090.021973
+Wall_nm[179] = 381.317932
+Wall_nm[180] = 200.990631
+Wall_nm[181] = 102.389427
+Wall_nm[182] = 415.580383
+Wall_nm[183] = 288.649170
+Wall_nm[184] = 232.955368
+Wall_nm[185] = 368.345642
+Wall_nm[186] = 110.681770
+Wall_nm[187] = 784.349792
+Wall_nm[188] = 285.144257
+Wall_nm[189] = 348.648529
+Wall_nm[190] = 241.019638
+Wall_nm[191] = 273.891907
+Wall_nm[192] = 115.826309
+Wall_nm[193] = 229.486984
+Wall_nm[194] = 130.499329
+Wall_nm[195] = 151.598877
+Wall_nm[196] = 148.351974
+Wall_nm[197] = 267.019226
+Wall_nm[198] = 98.054764
+Wall_nm[199] = 438.373535
+Wall_nm[200] = 99.796768
+Wall_nm[201] = 115.152290
+Wall_nm[202] = 141.433258
+Wall_nm[203] = 135.101685
+Wall_nm[204] = 125.825119
+Wall_nm[205] = 109.561890
+Wall_nm[206] = 106.716934
+Wall_nm[207] = 116.283554
+Wall_nm[208] = 93.082535
+Wall_nm[209] = 123.075302
+Wall_nm[210] = 446.038452
+Wall_nm[211] = 414.517578
+Wall_nm[212] = 758.245911
+Wall_nm[213] = 1938.548096
+Wall_nm[214] = 98.864937
+Wall_nm[215] = 98.536392
+Wall_nm[216] = 1163.728638
+Wall_nm[217] = 2657.538574
+Wall_nm[218] = 138.088547
+Wall_nm[219] = 147.611649
+Wall_nm[220] = 224.536194
+Wall_nm[221] = 87.938225
+Wall_nm[222] = 150.903564
+Wall_nm[223] = 205.105072
+Wall_nm[224] = 135.681305
+Wall_nm[225] = 164.234726
+Wall_nm[226] = 193.074371
+Wall_nm[227] = 307.119110
+Wall_nm[228] = 130.898254
+Wall_nm[229] = 118.999992
+Wall_nm[230] = 158.375870
+Wall_nm[231] = 896.224609
+Wall_nm[232] = 2595.945801
+Wall_nm[233] = 110.806732
+Wall_nm[234] = 151.334229
+Wall_nm[235] = 2041.456421
+Wall_nm[236] = 172.318939
+Wall_nm[237] = 220.786896
+Wall_nm[238] = 2358.538818
+Wall_nm[239] = 902.817627
+Wall_nm[240] = 202.360886
+Wall_nm[241] = 107.047379
+Wall_nm[242] = 1200.386597
+Wall_nm[243] = 149.291473
+Wall_nm[244] = 126.319756
+Wall_nm[245] = 482.064941
+Wall_nm[246] = 545.534790
+Wall_nm[247] = 274.455353
+Wall_nm[248] = 236.460480
+Wall_nm[249] = 214.193542
+Wall_nm[250] = 979.162964
+Wall_nm[251] = 119.258263
+Wall_nm[252] = 779.836121
+Wall_nm[253] = 93.086617
+Wall_nm[254] = 130.918640
+Wall_nm[255] = 803.209656
+Wall_nm[256] = 190.253876
+Wall_nm[257] = 867.276123
+Wall_nm[258] = 258.626770
+Wall_nm[259] = 117.085373
+Wall_nm[260] = 144.260178
+Wall_nm[261] = 103.237984
+Wall_nm[262] = 570.723755
+Wall_nm[263] = 317.002960
+Wall_nm[264] = 322.409821
+Wall_nm[265] = 262.188751
+Wall_nm[266] = 111.127113
+Wall_nm[267] = 126.388306
+Wall_nm[268] = 623.350342
+Wall_nm[269] = 111.982826
+Wall_nm[270] = 166.532761
+Wall_nm[271] = 468.569031
+Wall_nm[272] = 1445.208984
+Wall_nm[273] = 106.921852
+Wall_nm[274] = 90.512115
+Wall_nm[275] = 80.233475
+Wall_nm[276] = 101.625305
+Wall_nm[277] = 1536.498779
+Wall_nm[278] = 1109.083740
+Wall_nm[279] = 150.549561
+Wall_nm[280] = 293.836731
+Wall_nm[281] = 270.092041
+Wall_nm[282] = 140.063690
+Wall_nm[283] = 558.686340
+Wall_nm[284] = 458.464386
+Wall_nm[285] = 91.035881
+Wall_nm[286] = 172.425079
+Wall_nm[287] = 374.875824
+Wall_nm[288] = 261.422333
+Wall_nm[289] = 143.914474
+Wall_nm[290] = 116.396225
+Wall_nm[291] = 110.017563
+Wall_nm[292] = 203.901978
+Wall_nm[293] = 160.153656
+Wall_nm[294] = 125.395416
+Wall_nm[295] = 1188.140625
+Wall_nm[296] = 96.858475
+Wall_nm[297] = 155.308167
+Wall_nm[298] = 2440.036865
+Wall_nm[299] = 164.544037
+Wall_nm[300] = 97.221313
+Wall_nm[301] = 612.250916
+Wall_nm[302] = 275.053406
+Wall_nm[303] = 148.730942
+Wall_nm[304] = 918.209839
+Wall_nm[305] = 136.759933
+Wall_nm[306] = 213.126007
+Wall_nm[307] = 239.102768
+Wall_nm[308] = 219.204681
+Wall_nm[309] = 618.248047
+Wall_nm[310] = 122.250107
+Wall_nm[311] = 166.648499
+Wall_nm[312] = 147.236282
+Wall_nm[313] = 900.558472
+Wall_nm[314] = 126.337387
+Wall_nm[315] = 317.433777
+Wall_nm[316] = 103.233673
+Wall_nm[317] = 922.922913
+Wall_nm[318] = 110.850677
+Wall_nm[319] = 74.876556
+Wall_nm[320] = 840.266846
+Wall_nm[321] = 154.136993
+Wall_nm[322] = 435.651306
+Wall_nm[323] = 310.127899
+Wall_nm[324] = 639.233521
+Wall_nm[325] = 910.423035
+Wall_nm[326] = 2511.081299
+Wall_nm[327] = 411.426453
+Wall_nm[328] = 1665.076416
+Wall_nm[329] = 91.521133
+Wall_nm[330] = 306.407715
+Wall_nm[331] = 240.485947
+Wall_nm[332] = 455.220642
+Wall_nm[333] = 1036.694580
+Wall_nm[334] = 139.504852
+Wall_nm[335] = 142.172653
+Wall_nm[336] = 86.187912
+Wall_nm[337] = 210.091278
+Wall_nm[338] = 83.443298
+Wall_nm[339] = 183.879700
+Wall_nm[340] = 236.449814
+Wall_nm[341] = 897.954285
+Wall_nm[342] = 170.740417
+Wall_nm[343] = 124.845398
+Wall_nm[344] = 873.211182
+Wall_nm[345] = 822.947632
+Wall_nm[346] = 2403.347168
+Wall_nm[347] = 107.022232
+Wall_nm[348] = 110.552673
+Wall_nm[349] = 211.991806
+Wall_nm[350] = 2180.883789
+Wall_nm[351] = 214.498291
+Wall_nm[352] = 833.516968
+Wall_nm[353] = 1074.473511
+Wall_nm[354] = 105.761147
+Wall_nm[355] = 155.044571
+Wall_nm[356] = 116.541275
+Wall_nm[357] = 1166.645264
+Wall_nm[358] = 143.546341
+Wall_nm[359] = 125.219124
+Wall_nm[360] = 2151.970703
+Wall_nm[361] = 910.561523
+Wall_nm[362] = 817.334473
+Wall_nm[363] = 131.121490
+Wall_nm[364] = 934.639771
+Wall_nm[365] = 151.580444
+Wall_nm[366] = 104.999466
+Wall_nm[367] = 84.063057
+Wall_nm[368] = 124.285027
+Wall_nm[369] = 241.558746
+Wall_nm[370] = 416.819458
+Wall_nm[371] = 881.678284
+Wall_nm[372] = 1244.592773
+Wall_nm[373] = 574.610840
+Wall_nm[374] = 192.463226
+Wall_nm[375] = 949.949585
+Wall_nm[376] = 284.514832
+Wall_nm[377] = 145.509003
+Wall_nm[378] = 103.318939
+Wall_nm[379] = 105.761047
+Wall_nm[380] = 201.210297
+Wall_nm[381] = 677.140991
+Wall_nm[382] = 214.859039
+Wall_nm[383] = 640.573853
+Wall_nm[384] = 113.332458
+Wall_nm[385] = 134.943863
+Wall_nm[386] = 103.982956
+Wall_nm[387] = 588.420471
+Wall_nm[388] = 308.240845
+Wall_nm[389] = 104.367081
+Wall_nm[390] = 1021.658508
+Wall_nm[391] = 730.196411
+Wall_nm[392] = 1068.767822
+Wall_nm[393] = 383.112183
+Wall_nm[394] = 126.488266
+Wall_nm[395] = 267.997406
+Wall_nm[396] = 157.221375
+Wall_nm[397] = 107.866226
+Wall_nm[398] = 1144.967773
+Wall_nm[399] = 139.484787
+Wall_nm[400] = 155.911133
+Wall_nm[401] = 117.918098
+Wall_nm[402] = 305.629883
+Wall_nm[403] = 391.942322
+Wall_nm[404] = 113.795006
+Wall_nm[405] = 308.385742
+Wall_nm[406] = 231.716660
+Wall_nm[407] = 378.318604
+Wall_nm[408] = 91.159454
+Wall_nm[409] = 112.857590
+Wall_nm[410] = 325.947388
+Wall_nm[411] = 400.948090
+Wall_nm[412] = 603.911987
+Wall_nm[413] = 451.733673
+Wall_nm[414] = 1518.323608
+Wall_nm[415] = 86.935364
+Wall_nm[416] = 222.510315
+Wall_nm[417] = 817.883728
+Wall_nm[418] = 162.712891
+Wall_nm[419] = 126.205460
+Wall_nm[420] = 692.687744
+Wall_nm[421] = 381.651428
+Wall_nm[422] = 230.638016
+Wall_nm[423] = 115.542084
+Wall_nm[424] = 218.588821
+Wall_nm[425] = 715.098999
+Wall_nm[426] = 196.518219
+Wall_nm[427] = 137.818848
+Wall_nm[428] = 154.773666
+Wall_nm[429] = 92.706741
+Wall_nm[430] = 195.277206
+Wall_nm[431] = 420.359222
+Wall_nm[432] = 129.142853
+Wall_nm[433] = 2433.099365
+Wall_nm[434] = 2955.415283
+Wall_nm[435] = 2719.728516
+Wall_nm[436] = 148.025803
+Wall_nm[437] = 137.529861
+Wall_nm[438] = 118.469017
+Wall_nm[439] = 2107.740723
+Wall_nm[440] = 2963.314209
+Wall_nm[441] = 124.842896
+Wall_nm[442] = 114.391632
+Wall_nm[443] = 2191.828857
+Wall_nm[444] = 121.710144
+Wall_nm[445] = 82.249451
+Wall_nm[446] = 150.439056
+Wall_nm[447] = 145.043274
+Wall_nm[448] = 211.848633
+Wall_nm[449] = 2451.983643
+Wall_nm[450] = 1334.336426
+Wall_nm[451] = 594.070923
+Wall_nm[452] = 1112.112671
+Wall_nm[453] = 134.260635
+sample: 72000062, win_cf: 152.231567, template_id: 84, lag: 0
+sample: 72000067, win_cf: 102.663368, template_id: 233, lag: 0
+sample: 72000071, win_cf: 106.797859, template_id: 348, lag: 0
+sample: 72000113, win_cf: 95.425240, template_id: 84, lag: 0
+sample: 72000114, win_cf: 76.252243, template_id: 143, lag: 1
+sample: 72000118, win_cf: 66.196976, template_id: 230, lag: 0
+sample: 72000122, win_cf: 70.291618, template_id: 419, lag: 2
+sample: 72000156, win_cf: 98.597832, template_id: 348, lag: 0
+sample: 72000164, win_cf: 120.064758, template_id: 84, lag: 0
+sample: 72000169, win_cf: 94.986969, template_id: 221, lag: -1
+sample: 72000186, win_cf: 75.174789, template_id: 186, lag: -2
+sample: 72000207, win_cf: 64.734390, template_id: 348, lag: 0
+sample: 72000215, win_cf: 98.210190, template_id: 84, lag: 0
+sample: 72000220, win_cf: 73.498352, template_id: 233, lag: 0
+sample: 72000224, win_cf: 54.194885, template_id: 300, lag: -2
+sample: 72000258, win_cf: 110.682014, template_id: 348, lag: 0
+sample: 72000266, win_cf: 109.327217, template_id: 186, lag: 3
+sample: 72000271, win_cf: 120.092293, template_id: 233, lag: 0
+sample: 72000283, win_cf: 87.620934, template_id: 84, lag: 0
+sample: 72000309, win_cf: 140.760071, template_id: 348, lag: 0
+sample: 72000318, win_cf: 137.230133, template_id: 143, lag: 1
+sample: 72000322, win_cf: 145.008881, template_id: 233, lag: 0
+sample: 72000334, win_cf: 100.973740, template_id: 87, lag: 0
+sample: 72000351, win_cf: 123.290375, template_id: 70, lag: -1
+sample: 72000360, win_cf: 160.688599, template_id: 348, lag: 0
+sample: 72000368, win_cf: 126.713196, template_id: 186, lag: 3
+sample: 72000373, win_cf: 175.995300, template_id: 233, lag: 0
+sample: 72000402, win_cf: 204.810745, template_id: 143, lag: 2
+sample: 72000410, win_cf: 184.701202, template_id: 319, lag: 0
+sample: 72000413, win_cf: 215.752823, template_id: 437, lag: 2
+sample: 72000418, win_cf: 214.926086, template_id: 70, lag: 0
+sample: 72000422, win_cf: 240.204300, template_id: 259, lag: 3
+sample: 72000424, win_cf: 223.100845, template_id: 296, lag: 2
+sample: 72000437, win_cf: 122.695198, template_id: 143, lag: 1
+sample: 72000441, win_cf: 174.676132, template_id: 233, lag: 0
+sample: 72000444, win_cf: 231.653748, template_id: 347, lag: 2
+sample: 72000447, win_cf: 143.778168, template_id: 445, lag: 1
+sample: 72000453, win_cf: 199.871017, template_id: 87, lag: 0
+sample: 72000454, win_cf: 126.103477, template_id: 208, lag: 3
+sample: 72000455, win_cf: 68.362938, template_id: 180, lag: 2
+sample: 72000457, win_cf: 90.753075, template_id: 296, lag: 3
+sample: 72000460, win_cf: 80.646698, template_id: 348, lag: 2
+sample: 72000461, win_cf: 60.046215, template_id: 329, lag: 0
+sample: 72000469, win_cf: 191.009048, template_id: 143, lag: 3
+sample: 72000471, win_cf: 87.642433, template_id: 172, lag: 2
+sample: 72000472, win_cf: 55.787994, template_id: 87, lag: -2
+sample: 72000477, win_cf: 176.349060, template_id: 319, lag: 1
+sample: 72000481, win_cf: 163.544113, template_id: 415, lag: 0
+sample: 72000486, win_cf: 172.267990, template_id: 70, lag: 0
+sample: 72000488, win_cf: 176.964355, template_id: 208, lag: 3
+sample: 72000489, win_cf: 164.434708, template_id: 233, lag: 3
+sample: 72000491, win_cf: 182.717438, template_id: 296, lag: 3
+sample: 72000494, win_cf: 82.816887, template_id: 348, lag: 2
+sample: 72000495, win_cf: 49.450081, template_id: 329, lag: 0
+sample: 72000499, win_cf: 158.295242, template_id: 445, lag: 0
+sample: 72000503, win_cf: 168.295609, template_id: 143, lag: 3
+sample: 72000505, win_cf: 157.829346, template_id: 186, lag: 2
+sample: 72000506, win_cf: 52.193932, template_id: 87, lag: -2
+sample: 72000511, win_cf: 191.864548, template_id: 347, lag: 3
+sample: 72000512, win_cf: 172.994049, template_id: 415, lag: 3
+sample: 72000514, win_cf: 126.701416, template_id: 437, lag: 3
+sample: 72000515, win_cf: 52.202618, template_id: 369, lag: -1
+sample: 72000520, win_cf: 206.709076, template_id: 87, lag: 1
+sample: 72000522, win_cf: 178.421906, template_id: 208, lag: 3
+sample: 72000523, win_cf: 113.852516, template_id: 180, lag: 2
+sample: 72000524, win_cf: 145.206757, template_id: 259, lag: 3
+sample: 72000525, win_cf: 159.192993, template_id: 296, lag: 3
+sample: 72000526, win_cf: 50.168682, template_id: 329, lag: 3
+sample: 72000528, win_cf: 115.088509, template_id: 369, lag: 3
+sample: 72000529, win_cf: 50.168682, template_id: 329, lag: 0
+sample: 72000532, win_cf: 67.910851, template_id: 445, lag: 1
+sample: 72000533, win_cf: 49.482655, template_id: 415, lag: -1
+sample: 72000536, win_cf: 51.127010, template_id: 129, lag: 3
+sample: 72000537, win_cf: 185.871887, template_id: 143, lag: 3
+sample: 72000539, win_cf: 49.035721, template_id: 87, lag: -1
+sample: 72000540, win_cf: 66.023834, template_id: 428, lag: 3
+sample: 72000542, win_cf: 59.784309, template_id: 259, lag: 2
+sample: 72000544, win_cf: 171.991501, template_id: 319, lag: 2
+sample: 72000545, win_cf: 110.616333, template_id: 347, lag: 3
+sample: 72000546, win_cf: 184.157715, template_id: 415, lag: 3
+sample: 72000549, win_cf: 48.859428, template_id: 437, lag: 2
+sample: 72000550, win_cf: 178.731781, template_id: 40, lag: 3
+sample: 72000554, win_cf: 188.599579, template_id: 87, lag: 1
+sample: 72000555, win_cf: 113.927246, template_id: 172, lag: 3
+sample: 72000556, win_cf: 191.642334, template_id: 208, lag: 3
+sample: 72000557, win_cf: 127.245293, template_id: 233, lag: 3
+sample: 72000559, win_cf: 177.262512, template_id: 296, lag: 3
+sample: 72000562, win_cf: 82.971886, template_id: 348, lag: 2
+sample: 72000563, win_cf: 51.227360, template_id: 369, lag: 2
+sample: 72000566, win_cf: 187.211594, template_id: 445, lag: 1
+sample: 72000571, win_cf: 170.538452, template_id: 143, lag: 3
+sample: 72000573, win_cf: 148.306213, template_id: 180, lag: 3
+sample: 72000574, win_cf: 56.833332, template_id: 87, lag: -2
+sample: 72000576, win_cf: 59.836712, template_id: 259, lag: 2
+sample: 72000578, win_cf: 173.524139, template_id: 319, lag: 2
+sample: 72000579, win_cf: 186.137039, template_id: 347, lag: 3
+sample: 72000580, win_cf: 186.687805, template_id: 415, lag: 3
+sample: 72000582, win_cf: 90.976181, template_id: 437, lag: 3
+sample: 72000583, win_cf: 62.751324, template_id: 369, lag: -1
+sample: 72000587, win_cf: 218.676117, template_id: 87, lag: 2
+sample: 72000588, win_cf: 177.130539, template_id: 40, lag: -1
+sample: 72000589, win_cf: 102.117126, template_id: 172, lag: 3
+sample: 72000590, win_cf: 203.979935, template_id: 208, lag: 3
+sample: 72000591, win_cf: 118.080086, template_id: 233, lag: 3
+sample: 72000593, win_cf: 181.404678, template_id: 296, lag: 3
+sample: 72000594, win_cf: 56.333988, template_id: 140, lag: -3
+sample: 72000596, win_cf: 141.364197, template_id: 369, lag: 3
+sample: 72000597, win_cf: 53.457848, template_id: 415, lag: 3
+sample: 72000600, win_cf: 90.877693, template_id: 445, lag: 1
+sample: 72000601, win_cf: 53.457848, template_id: 415, lag: -1
+sample: 72000604, win_cf: 59.462646, template_id: 87, lag: 2
+sample: 72000605, win_cf: 168.801559, template_id: 143, lag: 3
+sample: 72000607, win_cf: 104.218048, template_id: 180, lag: 3
+sample: 72000608, win_cf: 64.022636, template_id: 428, lag: 3
+sample: 72000610, win_cf: 58.043694, template_id: 259, lag: 2
+sample: 72000611, win_cf: 190.352539, template_id: 319, lag: 3
+sample: 72000612, win_cf: 58.043694, template_id: 259, lag: 0
+sample: 72000613, win_cf: 108.452461, template_id: 347, lag: 3
+sample: 72000614, win_cf: 195.849960, template_id: 415, lag: 3
+sample: 72000617, win_cf: 58.801666, template_id: 386, lag: 1
+sample: 72000618, win_cf: 191.353256, template_id: 40, lag: 3
+sample: 72000621, win_cf: 228.009445, template_id: 87, lag: 2
+sample: 72000622, win_cf: 58.656494, template_id: 140, lag: 3
+sample: 72000623, win_cf: 94.581978, template_id: 172, lag: 3
+sample: 72000624, win_cf: 208.472290, template_id: 208, lag: 3
+sample: 72000625, win_cf: 128.037247, template_id: 233, lag: 3
+sample: 72000627, win_cf: 182.536865, template_id: 296, lag: 3
+sample: 72000630, win_cf: 94.328453, template_id: 348, lag: 2
+sample: 72000631, win_cf: 62.862926, template_id: 369, lag: 2
+sample: 72000634, win_cf: 214.655518, template_id: 445, lag: 1
+sample: 72000638, win_cf: 61.896866, template_id: 87, lag: 2
+sample: 72000639, win_cf: 159.083710, template_id: 143, lag: 3
+sample: 72000641, win_cf: 141.126511, template_id: 180, lag: 3
+sample: 72000642, win_cf: 67.240768, template_id: 231, lag: 3
+sample: 72000644, win_cf: 55.556721, template_id: 208, lag: 0
+sample: 72000647, win_cf: 191.967041, template_id: 319, lag: 1
+sample: 72000648, win_cf: 194.566452, template_id: 415, lag: 3
+sample: 72000651, win_cf: 72.324051, template_id: 386, lag: 1
+sample: 72000652, win_cf: 193.533661, template_id: 40, lag: 3
+sample: 72000655, win_cf: 238.959824, template_id: 87, lag: 2
+sample: 72000656, win_cf: 67.684135, template_id: 140, lag: 3
+sample: 72000657, win_cf: 95.495590, template_id: 172, lag: 3
+sample: 72000658, win_cf: 218.502579, template_id: 208, lag: 3
+sample: 72000659, win_cf: 90.752777, template_id: 233, lag: 3
+sample: 72000661, win_cf: 191.262909, template_id: 296, lag: 3
+sample: 72000664, win_cf: 85.742065, template_id: 348, lag: 2
+sample: 72000665, win_cf: 65.301521, template_id: 415, lag: 3
+sample: 72000668, win_cf: 178.809692, template_id: 445, lag: 1
+sample: 72000669, win_cf: 65.301521, template_id: 415, lag: -1
+sample: 72000672, win_cf: 69.445427, template_id: 87, lag: 2
+sample: 72000673, win_cf: 105.379120, template_id: 143, lag: 3
+sample: 72000674, win_cf: 81.034462, template_id: 159, lag: 3
+sample: 72000675, win_cf: 69.445427, template_id: 87, lag: -1
+sample: 72000676, win_cf: 77.570854, template_id: 428, lag: 3
+sample: 72000678, win_cf: 71.675972, template_id: 259, lag: 2
+sample: 72000679, win_cf: 209.745697, template_id: 319, lag: 3
+sample: 72000680, win_cf: 75.911942, template_id: 259, lag: 0
+sample: 72000681, win_cf: 161.249390, template_id: 347, lag: 3
+sample: 72000682, win_cf: 188.708893, template_id: 415, lag: 3
+sample: 72000685, win_cf: 61.172474, template_id: 369, lag: -1
+sample: 72000686, win_cf: 215.440048, template_id: 40, lag: 3
+sample: 72000689, win_cf: 272.098572, template_id: 87, lag: 2
+sample: 72000690, win_cf: 66.032494, template_id: 289, lag: 1
+sample: 72000691, win_cf: 90.137978, template_id: 172, lag: 3
+sample: 72000692, win_cf: 255.241165, template_id: 208, lag: 3
+sample: 72000693, win_cf: 98.102455, template_id: 233, lag: 3
+sample: 72000694, win_cf: 200.879272, template_id: 259, lag: 3
+sample: 72000695, win_cf: 231.837982, template_id: 296, lag: 3
+sample: 72000698, win_cf: 135.978531, template_id: 369, lag: 3
+sample: 72000699, win_cf: 60.289719, template_id: 415, lag: 3
+sample: 72000702, win_cf: 221.697784, template_id: 445, lag: 1
+sample: 72000703, win_cf: 60.289719, template_id: 415, lag: -1
+sample: 72000706, win_cf: 74.306389, template_id: 87, lag: 2
+sample: 72000707, win_cf: 121.261688, template_id: 143, lag: 3
+sample: 72000708, win_cf: 74.306389, template_id: 87, lag: 0
+sample: 72000709, win_cf: 74.306389, template_id: 87, lag: -1
+sample: 72000710, win_cf: 74.306389, template_id: 87, lag: -2
+sample: 72000712, win_cf: 67.897049, template_id: 208, lag: 0
+sample: 72000715, win_cf: 226.252869, template_id: 319, lag: 1
+sample: 72000716, win_cf: 237.462784, template_id: 415, lag: 3
+sample: 72000719, win_cf: 88.771629, template_id: 386, lag: 1
+sample: 72000720, win_cf: 233.433838, template_id: 40, lag: 3
+sample: 72000723, win_cf: 302.951385, template_id: 87, lag: 2
+sample: 72000724, win_cf: 132.816940, template_id: 140, lag: 3
+sample: 72000725, win_cf: 163.267120, template_id: 172, lag: 3
+sample: 72000726, win_cf: 272.959320, template_id: 208, lag: 3
+sample: 72000727, win_cf: 98.966049, template_id: 233, lag: 3
+sample: 72000729, win_cf: 241.626404, template_id: 296, lag: 3
+sample: 72000732, win_cf: 92.175995, template_id: 347, lag: 3
+sample: 72000733, win_cf: 78.489342, template_id: 415, lag: 3
+sample: 72000736, win_cf: 216.551407, template_id: 445, lag: 1
+sample: 72000737, win_cf: 78.489342, template_id: 415, lag: -1
+sample: 72000740, win_cf: 80.448967, template_id: 87, lag: 2
+sample: 72000741, win_cf: 102.267830, template_id: 143, lag: 3
+sample: 72000742, win_cf: 80.448967, template_id: 87, lag: 0
+sample: 72000743, win_cf: 80.448967, template_id: 87, lag: -1
+sample: 72000744, win_cf: 80.448967, template_id: 87, lag: -2
+sample: 72000746, win_cf: 89.033501, template_id: 259, lag: 2
+sample: 72000748, win_cf: 231.907501, template_id: 319, lag: 2
+sample: 72000749, win_cf: 102.006699, template_id: 347, lag: 3
+sample: 72000750, win_cf: 274.003662, template_id: 415, lag: 3
+sample: 72000752, win_cf: 74.022751, template_id: 437, lag: 3
+sample: 72000753, win_cf: 56.804974, template_id: 55, lag: -2
+sample: 72000754, win_cf: 239.524628, template_id: 40, lag: 3
+sample: 72000758, win_cf: 315.100159, template_id: 87, lag: 1
+sample: 72000759, win_cf: 172.367126, template_id: 172, lag: 3
+sample: 72000760, win_cf: 282.021301, template_id: 208, lag: 3
+sample: 72000761, win_cf: 164.675323, template_id: 233, lag: 3
+sample: 72000762, win_cf: 214.084412, template_id: 259, lag: 3
+sample: 72000763, win_cf: 247.165894, template_id: 296, lag: 3
+sample: 72000766, win_cf: 108.373940, template_id: 369, lag: 3
+sample: 72000767, win_cf: 64.025093, template_id: 55, lag: 1
+sample: 72000770, win_cf: 139.694138, template_id: 445, lag: 1
+sample: 72000771, win_cf: 60.041363, template_id: 225, lag: 3
+sample: 72000774, win_cf: 101.983719, template_id: 87, lag: 2
+sample: 72000775, win_cf: 144.295578, template_id: 143, lag: 3
+sample: 72000777, win_cf: 101.983719, template_id: 87, lag: -1
+sample: 72000778, win_cf: 101.983719, template_id: 87, lag: -2
+sample: 72000780, win_cf: 85.145767, template_id: 259, lag: 2
+sample: 72000782, win_cf: 215.544098, template_id: 319, lag: 2
+sample: 72000783, win_cf: 154.291595, template_id: 347, lag: 3
+sample: 72000784, win_cf: 215.650360, template_id: 415, lag: 3
+sample: 72000786, win_cf: 60.082546, template_id: 133, lag: 2
+sample: 72000787, win_cf: 60.082546, template_id: 133, lag: 1
+sample: 72000788, win_cf: 208.283676, template_id: 40, lag: 3
+sample: 72000792, win_cf: 293.241699, template_id: 87, lag: 1
+sample: 72000794, win_cf: 237.540558, template_id: 208, lag: 3
+sample: 72000795, win_cf: 127.432571, template_id: 140, lag: 0
+sample: 72000797, win_cf: 206.757263, template_id: 296, lag: 3
+sample: 72000798, win_cf: 75.558548, template_id: 180, lag: -1
+sample: 72000800, win_cf: 79.288490, template_id: 347, lag: 3
+sample: 72000801, win_cf: 62.059456, template_id: 106, lag: 3
+sample: 72000804, win_cf: 184.602936, template_id: 445, lag: 1
+sample: 72000808, win_cf: 71.836037, template_id: 311, lag: 3
+sample: 72000809, win_cf: 90.126236, template_id: 143, lag: 3
+sample: 72000810, win_cf: 56.315639, template_id: 87, lag: 0
+sample: 72000811, win_cf: 58.625191, template_id: 208, lag: 3
+sample: 72000812, win_cf: 102.599159, template_id: 428, lag: 3
+sample: 72000814, win_cf: 58.625191, template_id: 208, lag: 0
+sample: 72000817, win_cf: 183.779068, template_id: 319, lag: 1
+sample: 72000818, win_cf: 191.891312, template_id: 415, lag: 3
+sample: 72000820, win_cf: 96.367325, template_id: 437, lag: 3
+sample: 72000821, win_cf: 60.942379, template_id: 106, lag: 0
+sample: 72000826, win_cf: 215.376328, template_id: 87, lag: 1
+sample: 72000827, win_cf: 183.344345, template_id: 40, lag: -2
+sample: 72000828, win_cf: 208.846222, template_id: 208, lag: 3
+sample: 72000831, win_cf: 175.056320, template_id: 296, lag: 3
+sample: 72000834, win_cf: 73.561050, template_id: 348, lag: 2
+sample: 72000835, win_cf: 64.036049, template_id: 55, lag: 1
+sample: 72000843, win_cf: 169.901062, template_id: 143, lag: 3
+sample: 72000845, win_cf: 57.620564, template_id: 400, lag: 3
+sample: 72000846, win_cf: 65.160110, template_id: 233, lag: 3
+sample: 72000849, win_cf: 152.318008, template_id: 319, lag: 3
+sample: 72000854, win_cf: 160.974670, template_id: 445, lag: 2
+sample: 72000855, win_cf: 126.284485, template_id: 347, lag: -1
+sample: 72000860, win_cf: 195.892731, template_id: 87, lag: 1
+sample: 72000861, win_cf: 151.592834, template_id: 40, lag: -2
+sample: 72000862, win_cf: 171.280884, template_id: 208, lag: 3
+sample: 72000865, win_cf: 146.728973, template_id: 296, lag: 3
+sample: 72000868, win_cf: 103.828720, template_id: 369, lag: 3
+sample: 72000879, win_cf: 110.798676, template_id: 180, lag: 3
+sample: 72000896, win_cf: 154.284119, template_id: 87, lag: -1
+sample: 72000900, win_cf: 205.387924, template_id: 319, lag: 3
+sample: 72000904, win_cf: 206.690811, template_id: 415, lag: 2
+sample: 72000910, win_cf: 205.976685, template_id: 70, lag: 1
+sample: 72000914, win_cf: 143.866989, template_id: 143, lag: 0
+sample: 72000917, win_cf: 183.533508, template_id: 296, lag: 2
+sample: 72000921, win_cf: 246.413666, template_id: 347, lag: 1
+sample: 72000922, win_cf: 54.672569, template_id: 348, lag: -1
+sample: 72000939, win_cf: 101.418541, template_id: 348, lag: -1
+sample: 72000946, win_cf: 181.292908, template_id: 87, lag: 0
+sample: 72000950, win_cf: 167.133408, template_id: 208, lag: 0
+sample: 72000954, win_cf: 129.379608, template_id: 319, lag: 0
+sample: 72000961, win_cf: 122.892426, template_id: 70, lag: 1
+sample: 72000966, win_cf: 167.612259, template_id: 233, lag: 2
+sample: 72000970, win_cf: 108.358986, template_id: 296, lag: 0
+sample: 72000989, win_cf: 139.520020, template_id: 445, lag: 3
+sample: 72000997, win_cf: 160.592529, template_id: 143, lag: 2
 Processed 100000 batches... out of 200499120
 Processed 200000 batches... out of 200499120
 Processed 300000 batches... out of 200499120
@@ -365,130 +966,6 @@ Processed 35700000 batches... out of 200499120
 Processed 35800000 batches... out of 200499120
 Processed 35900000 batches... out of 200499120
 Processed 36000000 batches... out of 200499120
-SAMPLE 108030000 CHAN 0: -0.277183
-SAMPLE 108030000 CHAN 1: 0.097519
-SAMPLE 108030000 CHAN 2: -0.301956
-SAMPLE 108030000 CHAN 3: -0.774304
-SAMPLE 108030000 CHAN 4: -0.225387
-SAMPLE 108030000 CHAN 5: 0.225314
-SAMPLE 108030000 CHAN 6: 0.987106
-SAMPLE 108030000 CHAN 7: 0.404534
-SAMPLE 108030000 CHAN 8: 0.916029
-SAMPLE 108030000 CHAN 9: 0.549361
-SAMPLE 108030000 CHAN 10: 1.665527
-SAMPLE 108030000 CHAN 11: -0.568699
-SAMPLE 108030000 CHAN 12: -0.311023
-SAMPLE 108030000 CHAN 13: -1.073307
-SAMPLE 108030000 CHAN 14: -0.085835
-SAMPLE 108030000 CHAN 15: 0.087042
-SAMPLE 108030000 CHAN 16: 0.334990
-SAMPLE 108030000 CHAN 17: 0.820171
-SAMPLE 108030000 CHAN 18: 0.672062
-SAMPLE 108030000 CHAN 19: -0.399152
-SAMPLE 108030000 CHAN 20: -0.131315
-SAMPLE 108030000 CHAN 21: -0.272982
-SAMPLE 108030000 CHAN 22: -0.017230
-SAMPLE 108030000 CHAN 23: 0.111518
-SAMPLE 108030000 CHAN 24: -0.535435
-SAMPLE 108030000 CHAN 25: 0.321478
-SAMPLE 108030000 CHAN 26: 0.833689
-SAMPLE 108030000 CHAN 27: 0.933995
-SAMPLE 108030000 CHAN 28: 0.211541
-SAMPLE 108030000 CHAN 29: -0.366437
-SAMPLE 108030000 CHAN 30: -0.119251
-SAMPLE 108030000 CHAN 31: -0.566025
-SAMPLE 108030000 CHAN 32: 0.367305
-SAMPLE 108030000 CHAN 33: 0.549153
-SAMPLE 108030000 CHAN 34: -3.003390
-SAMPLE 108030000 CHAN 35: 1.018414
-SAMPLE 108030000 CHAN 36: -0.164218
-SAMPLE 108030000 CHAN 37: 2.667484
-SAMPLE 108030000 CHAN 38: -0.526946
-SAMPLE 108030000 CHAN 39: -0.042176
-SAMPLE 108030000 CHAN 40: 0.192459
-SAMPLE 108030000 CHAN 41: -0.378147
-SAMPLE 108030000 CHAN 42: -0.649698
-SAMPLE 108030000 CHAN 43: -0.495687
-SAMPLE 108030000 CHAN 44: -1.092297
-SAMPLE 108030000 CHAN 45: 0.037534
-SAMPLE 108030000 CHAN 46: 0.608147
-SAMPLE 108030000 CHAN 47: 1.091479
-SAMPLE 108030000 CHAN 48: 0.657803
-SAMPLE 108030000 CHAN 49: 0.380070
-SAMPLE 108030000 CHAN 50: 0.218868
-SAMPLE 108030000 CHAN 51: 0.053766
-SAMPLE 108030000 CHAN 52: -0.215899
-SAMPLE 108030000 CHAN 53: -0.035064
-SAMPLE 108030000 CHAN 54: -0.048263
-SAMPLE 108030000 CHAN 55: 0.039705
-SAMPLE 108030000 CHAN 56: 0.268498
-SAMPLE 108030000 CHAN 57: 0.849662
-SAMPLE 108030000 CHAN 58: -0.248004
-SAMPLE 108030000 CHAN 59: 0.239588
-SAMPLE 108030000 CHAN 60: -0.623534
-SAMPLE 108030000 CHAN 61: 0.023401
-SAMPLE 108030000 CHAN 62: -0.154870
-SAMPLE 108030000 CHAN 63: 0.549295
-SAMPLE 108030000 CHAN 64: -0.284570
-SAMPLE 108030000 CHAN 65: -0.745840
-SAMPLE 108030000 CHAN 66: 0.933818
-SAMPLE 108030000 CHAN 67: 1.279576
-SAMPLE 108030000 CHAN 68: 1.681906
-SAMPLE 108030000 CHAN 69: 0.207071
-SAMPLE 108030000 CHAN 70: 0.048445
-SAMPLE 108030000 CHAN 71: 0.646494
-SAMPLE 108030000 CHAN 72: 0.384591
-SAMPLE 108030000 CHAN 73: 0.112670
-SAMPLE 108030000 CHAN 74: 0.896460
-SAMPLE 108030000 CHAN 75: 0.166054
-SAMPLE 108030000 CHAN 76: -0.527755
-SAMPLE 108030000 CHAN 77: -0.397958
-SAMPLE 108030000 CHAN 78: 0.319212
-SAMPLE 108030000 CHAN 79: 1.213617
-SAMPLE 108030000 CHAN 80: 0.369339
-SAMPLE 108030000 CHAN 81: -0.013041
-SAMPLE 108030000 CHAN 82: -1.146599
-SAMPLE 108030000 CHAN 83: -0.067614
-SAMPLE 108030000 CHAN 84: -0.588255
-SAMPLE 108030000 CHAN 85: 0.299016
-SAMPLE 108030000 CHAN 86: -0.413875
-SAMPLE 108030000 CHAN 87: -0.068721
-SAMPLE 108030000 CHAN 88: 0.784026
-SAMPLE 108030000 CHAN 89: 0.956548
-SAMPLE 108030000 CHAN 90: 1.422587
-SAMPLE 108030000 CHAN 91: 1.367059
-SAMPLE 108030000 CHAN 92: 0.496533
-SAMPLE 108030000 CHAN 93: 0.175669
-SAMPLE 108030000 CHAN 94: 0.416470
-SAMPLE 108030000 CHAN 95: 0.779712
-SAMPLE 108030000 CHAN 96: 0.370662
-SAMPLE 108030000 CHAN 97: -0.607002
-SAMPLE 108030000 CHAN 98: 0.983810
-SAMPLE 108030000 CHAN 99: 1.094502
-SAMPLE 108030000 CHAN 100: 0.983297
-SAMPLE 108030000 CHAN 101: -0.136907
-SAMPLE 108030000 CHAN 102: -0.345458
-SAMPLE 108030000 CHAN 103: 0.625148
-SAMPLE 108030000 CHAN 104: -0.043451
-SAMPLE 108030000 CHAN 105: 0.143796
-SAMPLE 108030000 CHAN 106: -0.826639
-SAMPLE 108030000 CHAN 107: -0.895831
-SAMPLE 108030000 CHAN 108: 1.947851
-SAMPLE 108030000 CHAN 109: 1.686066
-SAMPLE 108030000 CHAN 110: 1.539362
-SAMPLE 108030000 CHAN 111: 0.210626
-SAMPLE 108030000 CHAN 112: 0.796603
-SAMPLE 108030000 CHAN 113: 1.133512
-SAMPLE 108030000 CHAN 114: 1.055567
-SAMPLE 108030000 CHAN 115: 2.090294
-SAMPLE 108030000 CHAN 116: 2.291716
-SAMPLE 108030000 CHAN 117: 0.841304
-SAMPLE 108030000 CHAN 118: -0.884878
-SAMPLE 108030000 CHAN 119: -3.565715
-SAMPLE 108030000 CHAN 120: 0.037207
-SAMPLE 108030000 CHAN 121: 0.786908
-SAMPLE 108030000 CHAN 122: 2.076277
-SAMPLE 108030000 CHAN 123: 0.680905
 Processed 36100000 batches... out of 200499120
 Processed 36200000 batches... out of 200499120
 Processed 36300000 batches... out of 200499120
@@ -2133,10 +2610,10 @@ Processed 200100000 batches... out of 200499120
 Processed 200200000 batches... out of 200499120
 Processed 200300000 batches... out of 200499120
 Processed 200400000 batches... out of 200499120
-Processing complete. Detected 2503742 spikes.
+Processing complete. Detected 60993118 spikes.
 Saving results in Kilosort format...
-Saved 2503742 spikes to /data/results/mP79_res/flows_c/debug/spike_times.npy
-Saved 2503742 spikes to /data/results/mP79_res/flows_c/debug/spike_templates.npy
-Saved 2503742 spikes to /data/results/mP79_res/flows_c/debug/amplitudes.npy
-Saved 2000000 spikes to /data/results/mP79_res/flows_c/debug/cf_trace.npy
+Saved 60993118 spikes to /data/results/mP79_res/flows_c/peeling/spike_times.npy
+Saved 60993118 spikes to /data/results/mP79_res/flows_c/peeling/spike_templates.npy
+Saved 60993118 spikes to /data/results/mP79_res/flows_c/peeling/amplitudes.npy
+Saved 72000000 spikes to /data/results/mP79_res/flows_c/debug/cf_trace.npy
 Done!
