@@ -871,7 +871,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
         clear_cache=clear_cache, verbose=verbose
         )
     Wall3 = template_matching.postprocess_templates(
-        Wall, ops, clu, st0, tF, device=device
+        Wall, ops, clu, st0_freeze, tF_freeze, device=device
         )
 
     elapsed = time.time() - tic
