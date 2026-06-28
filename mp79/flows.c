@@ -162,7 +162,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
 
     // 3. Whitening
     int batch_idx = i / BATCH_SIZE; //debug: dshift for all batches
-    const float *Wsh_curr = &Wsh_per_batch[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
+    const float *Wsh_curr = &Wrot[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
     float whitened_temp[NCHAN];
     for (int w = 0; w < NCHAN; w++) {
         float sum = 0.0f; 
