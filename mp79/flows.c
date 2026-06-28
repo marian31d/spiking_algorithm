@@ -8,7 +8,7 @@
 // Include array hearder files for configuration 
 #include "Wall.h"
 #include "Wall_nm.h"  //#include "Wall_nm.h" 
-#include "Wsh_per_batch.h"
+#include "Wrot.h"
 #include "iir_weights.h"
 #include "wPCA.h"
 
@@ -16,7 +16,7 @@
 
 #define NCHAN_BIN 136
 #define NCHAN 124
-#define NCLU 454        //Number of clusters, should be configured on the RAM
+#define NCLU 175        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 #define LAG 3
