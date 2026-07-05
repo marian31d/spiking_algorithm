@@ -5,15 +5,15 @@ from kilosort import run_kilosort
 from kilosort.io import load_probe
 from kilosort.parameters import DEFAULT_SETTINGS
 
-# --- recover the exact settings from a reference GUI run ---
-ref = np.load('/data/results/mds2_res/IIR/matching_pursuit/100peels/ops.npy', allow_pickle=True).item()
 
-# ops holds every merged setting; pull the ones run_kilosort takes as `settings`
-# (n_chan_bin, fs, Th_universal, Th_learned, batch_size, nt, dmin, dminx, ... )
-settings = {k: ref[k] for k in DEFAULT_SETTINGS if k in ref}
+class data:
+    def __init__(self, BIN, PROBE, REF, RES_BASE):
+        self.BIN = BIN
+        self.PROBE=PROBE
+        self.REF=REF
+        self.RES_BASE=RES_BASE
+
 # if your version doesn't nest 'settings', copy the DEFAULT_SETTINGS keys out of ops directly.
-
-probe = load_probe('/home/mariandawud/kilosort/mds2/probe_mds2.json') #make sure that the probe kilosort uses is the json one
 
 def gui_equivalent_run(data_file, results_dir, settings, probe, ref):
 	return run_kilosort(
@@ -28,19 +28,44 @@ def gui_equivalent_run(data_file, results_dir, settings, probe, ref):
 		save_preprocessed_copy=ref.get('save_preprocessed_copy', False),
 	)
 #defining the iterations parameter 
-param = [1, 2, 4, 10, 20, 100]
+param = [1, 2, 4, 10, 20, 50, 70, 100]
 
 #parameters for dataset
-data_file = '/data/mDS2/dat/mDS2_02/mDS2_02.dat'
-base_results_dir = '/data/results/mds2_res/IIR/matching_pursuit/'
+ms51 = data("/data/mS51/dat/mS51_49/mS51_49.dat", \
+        "/home/mariandawud/kilosort/ms51/probe_ms51_new.json", \
+		'/data/results/mS51_res/IIR/ms51-det-3pc-2peels-IIR-28.6/ops.npy', \
+		'/data/results/mS51_res/IIR/matching_pursuit/')
+
+mp79 = data("/data/mP79/dat/mP79_17/mP79_17.dat", \
+	"/home/mariandawud/kilosort/mp79/probe_mp79.json", \
+	'/data/results/mP79_res/IIR/mp79-det-3pc-2peels-IIR-28.6/ops.npy', \
+	'/data/results/mP79_res/IIR/matching_pursuit/')
+
+mds2 = data("/data/mDS2/dat/mDS2_02/mDS2_02.dat", \
+	"/home/mariandawud/kilosort/mds2/probe_mds2.json", \
+	'/data/results/mds2_res/IIR/mds2-det-3pc-2peels-IIR-29.6/ops.npy', \
+	'/data/results/mds2_res/IIR/matching_pursuit/')
+
+data_l = [ms51, mp79, mds2]
 
 # --- now loop over datasets / parameter variations ---
-for x in param:
-	settings['max_peels'] = x
-	resdir_name = f"{x}peels"
-	results_dir = Path(base_results_dir) / Path(resdir_name)
-	results_dir.mkdir(parents=True, exist_ok=True)
-	gui_equivalent_run(data_file, str(results_dir), settings, probe, ref)
+for d in data_l:
+	# --- recover the exact settings from a reference GUI run ---
+	ref = np.load(d.REF, allow_pickle=True).item()
 
-	gc.collect()
-	torch.cuda.empty_cache()
+	# ops holds every merged setting; pull the ones run_kilosort takes as `settings`
+	# (n_chan_bin, fs, Th_universal, Th_learned, batch_size, nt, dmin, dminx, ... )
+	settings = {k: ref[k] for k in DEFAULT_SETTINGS if k in ref}
+
+	#make sure that the probe kilosort uses is the json one
+	probe = load_probe(d.PROBE)
+
+	for x in param:
+		settings['max_peels'] = x
+		resdir_name = f"{x}peels"
+		results_dir = Path(d.RES_BASE) / resdir_name
+		results_dir.mkdir(parents=True, exist_ok=True)
+		gui_equivalent_run(d.BIN, str(results_dir), settings, probe, ref)
+
+		gc.collect()
+		torch.cuda.empty_cache()
