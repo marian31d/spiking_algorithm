@@ -689,7 +689,7 @@ def main():
     summary_lines.append(f"Matched spikes: {n_match}")
     summary_lines.append(f"GUI total spikes:  {gui_total_spikes}  (in window: {gui_kept_spikes})")
     summary_lines.append(f"FLOW total spikes: {flow_total_spikes}  (in window: {flow_kept_spikes})")
-    summary_lines.append(f"Matched spikes: {n_match}")
+    summary_lines.append(f"Matched spikes/GUI window spikes: {n_match / max(gui_kept_spikes, 1):.2f}")
     summary_lines.append(f"GUI unique clusters (matched spikes):  {len(gui_ids)}")
     summary_lines.append(f"FLOW unique clusters (matched spikes): {len(flow_ids)}")
     summary_lines.append("")
