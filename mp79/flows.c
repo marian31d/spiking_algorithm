@@ -16,7 +16,7 @@
 
 #define NCHAN_BIN 136
 #define NCHAN 124
-#define NCLU 175        //Number of clusters, should be configured on the RAM
+#define NCLU 180        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 #define LAG 3
@@ -25,7 +25,7 @@
 #define RB 128       //ring buffer length prev 64
 #define RING_MASK (RB - 1)
 #define NPCS 3
-#define MAX_PEELS 2 //matching pursuit iteration number, if disabled set to 1
+#define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
 #define BATCH_SIZE 60000
 #define REFRACTORY_SAMPLES 20
 
@@ -69,6 +69,7 @@ static SampleBuffer sample;
 static uint32_t num_spikes = 0;
 
 static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
+static uint32_t last_any_commit; static float last_any_cf; //per nt timewindow refractory for each peel
 
 
 //filter history variables - should be located in TCM for speed
@@ -162,12 +163,12 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
 
     // 3. Whitening
     int batch_idx = i / BATCH_SIZE; //debug: dshift for all batches
-    const float *Wsh_curr = &Wrot[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
+    //const float *Wsh_curr = &Wrot[batch_idx * NCHAN * NCHAN]; //debug: dshift for all batches
     float whitened_temp[NCHAN];
     for (int w = 0; w < NCHAN; w++) {
         float sum = 0.0f; 
         for (int c = 0; c < NCHAN; c++) {
-            sum += sample->raw_data[h][c] * Wsh_curr[w * NCHAN + c];
+            sum += sample->raw_data[h][c] * Wrot[w * NCHAN + c];
         }
         whitened_temp[w] = sum;
     }
@@ -240,10 +241,10 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     uint32_t end_center;
     if (!confirm_peak_evt(sample, &end_center)) return 0;          // stage 1: gate
 
-    uint32_t T0        = (i >= (uint32_t)(1 + LAG)) ? (i - (1 + LAG)) : 0;
+    uint32_t T0        = (i >= (uint32_t)(LAG)) ? (i - (1 + LAG)) : 0;
     uint32_t base_peak = (i >= (uint32_t)(WIN_END_OFFSET + 1 + LAG))
                          ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0;
-
+    
     // matching-pursuit: detect strongest, subtract, re-detect on residual, up to MAX_PEELS
     for (int peel = 0; peel < MAX_PEELS; peel++) {
 
@@ -258,14 +259,14 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         }
 
         /////////////////////DEBUG (first peel pass only)/////////////////////
-        if (peel == 0 && i >= CF_DUMP_N && i <= CF_DUMP_N + 1000u) {
-            float win_cf = 0.0f; int win_temp = -1;
-            for (int t = 0; t < NCLU; t++) if (cf_best[t] > win_cf) { win_cf = cf_best[t]; win_temp = t; }
-            for (int t = 0; t < NCLU; t++)
-                fprintf(cf_trace, "%u, %f\n", i, cf_best[t]);
-            printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
-                   i, win_cf, win_temp, win_temp >= 0 ? lag_best[win_temp] : 0);
-        }
+        // if (peel == 0 && i >= CF_DUMP_N && i <= CF_DUMP_N + 400u) {
+        //     float win_cf = 0.0f; int win_temp = -1;
+        //     for (int t = 0; t < NCLU; t++) if (cf_best[t] > win_cf) { win_cf = cf_best[t]; win_temp = t; }
+        //     for (int t = 0; t < NCLU; t++)
+        //         fprintf(cf_trace, "%u, %f\n", i, cf_best[t]);
+        //     printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
+        //            i, win_cf, win_temp, win_temp >= 0 ? lag_best[win_temp] : 0);
+        // }
         //////////////////////////////////////////////////////////////////////
 
         // best eligible template: above threshold AND not refractory (per-template peak time)
@@ -274,23 +275,29 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         for (int t = 0; t < NCLU; t++) {
             if (cf_best[t] <= TH_LEARNED_SQ) continue;
             uint32_t peak_t = base_peak + lag_best[t];
-            if (peak_t - last_commit_i[t] < REFRACTORY_SAMPLES) continue;
+            if (peak_t - last_commit_i[t] < REFRACTORY_SAMPLES) continue;       //maybe useless
+            if ((peak_t - last_any_commit < nt) && cf_best[t] < last_any_cf) continue;
             if (cf_best[t] > best_cf) {
                 best_cf=cf_best[t]; best_dot=dot_best[t]; best_lag=lag_best[t];
                 best_t=t; best_peak=peak_t;
             }
+            fprintf(cf_trace, "%u, %f, %u\n", i, cf_best[t], t);
+            printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
+            i, best_cf, best_t, best_t >= 0 ? lag_best[best_t] : 0);
         }
         if (best_t < 0) return 0;                       // nothing eligible left at this location
 
         float amp = best_dot / Wall_nm[best_t];          // single multiply: no sqrt, no divide
-
-        if (*spike_count < 2*(*data_size)) {
+        uint64_t size = 2*(*data_size);
+        if (*spike_count < size) {
             spike_results[*spike_count].absolute_time = best_peak;
             spike_results[*spike_count].template_id   = (uint16_t)best_t;
             spike_results[*spike_count].score         = amp;
             (*spike_count)++;
         }
         last_commit_i[best_t] = best_peak;
+        last_any_commit = best_peak;
+        last_any_cf = best_cf;
 
 #if ENABLE_PEEL_SUBTRACT
         // subtract at the SAME ring slots scoring read: head-relative window-end of the
@@ -352,11 +359,11 @@ void save_npy(const char* filename, void* data, size_t num_elements, size_t elem
 
 int main() {
     char filename[] = "/data/mP79/dat/mP79_17/mP79_17.dat";
-    char results_dir[] = "/data/results/mP79_res/flows_c";
+    char results_dir[] = "/data/results/mP79_res/flows_c/";
 
     /////////////////////DEBUG/////////////////////////
-    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/peeling/cf_trace.txt", "w");
-    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/peeling/data_trace.txt", "w");
+    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/cf_trace.txt", "w");
+    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/data_trace.txt", "w");
 
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");
@@ -383,7 +390,7 @@ int main() {
     fseeko(fptr, (int64_t)byte_offset, SEEK_SET);
 
     // Add temporarily in main, before the loop:
-    for (int t = 125; t < NCLU; t++)
+    for (int t = 0; t < NCLU; t++)
         printf("Wall_nm[%d] = %f\n", t, Wall_nm[t]);
     
     //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
@@ -440,17 +447,17 @@ int main() {
 
     // 3. Format the file paths
     char times_file[256], temp_file[256], amp_file[256];
-    snprintf(times_file, sizeof(times_file), "%s/peeling/spike_times.npy", results_dir);
-    snprintf(temp_file,  sizeof(temp_file),  "%s/peeling/spike_templates.npy", results_dir);
-    snprintf(amp_file,   sizeof(amp_file),   "%s/peeling/amplitudes.npy", results_dir);
+    snprintf(times_file, sizeof(times_file), "%s/spike_times.npy", results_dir);
+    snprintf(temp_file,  sizeof(temp_file),  "%s/spike_templates.npy", results_dir);
+    snprintf(amp_file,   sizeof(amp_file),   "%s/amplitudes.npy", results_dir);
 
     // 4. Save as .npy using Little-Endian NumPy types (<i8, <i4, <f8)
     save_npy(times_file, spike_times,     num_spikes, sizeof(int64_t), "<i8");
     save_npy(temp_file,  spike_templates, num_spikes, sizeof(int32_t), "<i4");
     save_npy(amp_file,   amplitudes,      num_spikes, sizeof(double),  "<f8");
 
-    save_npy("/data/results/mP79_res/flows_c/debug/cf_trace.npy", cf_trace, CF_DUMP_N, sizeof(float), "<f4");
     fclose(cf_trace);
+    fclose(data_trace);
     // 5. Clean up RAM
     free(spike_times);
     free(spike_templates);
