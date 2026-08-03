@@ -344,30 +344,7 @@ def write_run_stats(phase, results_dir, Wall, st, HOUR_SEC,
 
     logger.info(f"[{phase.upper()}-STATS] Wrote {phase}_stats.txt/json into {results_dir}")
 
-# Use this instead of BinaryFiltered in order to change the filter typ to IIR biquad
-b, a = butter(3, 300, fs=20000, btype='high')   # your exact biquad
-class BiquadFiltered(BinaryFiltered):
-    def filter(self, X, ops=None, ibatch=None, skip_preproc=False):
-        if self.chan_map is not None:
-            X = X[self.chan_map]
-        if self.invert_sign:
-            X = X * -1
-        X = X - X.mean(1, keepdim=True)
-        if self.do_CAR:
-            X = X - torch.median(X, 0)[0]          # same median-CAR
-        if skip_preproc:
-            return X
-        # --- biquad replaces zero-phase FFT highpass ---
-        Xnp = lfilter(b, a, X.cpu().numpy(), axis=1)   # causal, per channel
-        X = torch.from_numpy(Xnp).to(X.device).float()
-        # --- whitening + drift, identical to parent ---
-        if self.whiten_mat is not None:
-            if self.dshift is not None and ops is not None and ibatch is not None:
-                M = get_drift_matrix(ops, self.dshift[ibatch], device=self.device)
-                X = (M @ self.whiten_mat) @ X
-            else:
-                X = self.whiten_mat @ X
-        return X
+
 
 def build_bfile_from_ops(bin_path, probe, ops, Wrot, tmin=0.0, tmax=np.inf, dshift=None):
     s = ops["settings"]
@@ -380,7 +357,6 @@ def build_bfile_from_ops(bin_path, probe, ops, Wrot, tmin=0.0, tmax=np.inf, dshi
     hp_filter = ops["fwav"]
     #Wrot = ops.get("Wrot", None) 
     print(Wrot)
-#BinaryFiltered
     bfile = BiquadFiltered(
         filename=str(bin_path),
         n_chan_bin=nchan,

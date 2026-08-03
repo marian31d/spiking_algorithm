@@ -337,7 +337,7 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
             kplots.plot_diagnostics(Wall0, clu0, ops, results_dir)
         ###########################################################
         # Freeze: only use first hour spikes for final clustering/merging
-        freeze_sample = int(3600.0 * ops['settings']['fs'])
+        freeze_sample = int(1800.0 * ops['settings']['fs'])
         mask = st[:, 0] < freeze_sample
         st_freeze = st[mask]
         tF_freeze = tF[mask]
@@ -838,7 +838,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
         )
     #######################################################                
     # Freeze: only use first hour for template learning
-    FREEZE_SEC = 3600.0
+    FREEZE_SEC = 1800.0
     freeze_sample = int(FREEZE_SEC * ops['settings']['fs'])
     mask = st0[:, 0] < freeze_sample
     st0_freeze = st0[mask]
@@ -864,7 +864,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
 
     tic = time.time()
     logger.info(' ')
-    logger.info('First clustering')
+    logger.info(f'First clustering - FREEZE_SEC: {FREEZE_SEC}')
     logger.info('-'*40)
     clu, Wall = clustering_qr.run(
         ops, st0_freeze, tF_freeze, mode='spikes', device=device, progress_bar=progress_bar,  #revert st and tf to frozen ones
