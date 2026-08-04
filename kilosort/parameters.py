@@ -361,6 +361,35 @@ EXTRA_PARAMETERS = {
 
 
     ### CLUSTERING
+    'freeze_sec': {
+        'gui_name': 'freeze seconds', 'type': float, 'min': 0, 'max': np.inf,
+        'exclude': [], 'default': np.inf, 'step': 'clustering',
+        'description':
+            """
+            Spikes are always detected and template-matched across the full
+            recording, but every model fit from spike/waveform data is
+            restricted to spikes and batches within the first `freeze_sec`
+            seconds: the whitening matrix, the universal templates (wPCA,
+            wTEMP; only when `templates_from_data=True`), and cluster
+            templates in both the initial and final clustering passes.
+            Those fitted models/templates are then used to re-match spikes
+            across the full recording. This keeps model-fitting cost
+            roughly independent of total recording length, at the cost of
+            fitting from a subset of the data.
+
+            Drift correction is *not* affected by this setting, since it
+            estimates a per-batch correction across the whole recording
+            rather than a single reusable model.
+
+            By default (`freeze_sec = np.inf`), freezing is disabled and
+            all fitting uses the entire recording. Set to a finite number
+            of seconds (e.g. 900) to enable freezing for very long
+            recordings. `freeze_sec = 0` is treated the same as `np.inf`
+            (freezing disabled), since restricting to zero seconds of data
+            would otherwise be degenerate.
+            """
+    },
+
     'acg_threshold': {
         'gui_name': 'acg threshold', 'type': float, 'min': 0, 'max': np.inf,
         'exclude': [0], 'default': 0.2, 'step': 'clustering',
