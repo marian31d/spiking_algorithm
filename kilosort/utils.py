@@ -33,6 +33,21 @@ PROBE_URLS = {
 }
 
 
+def freeze_n_batches(freeze_sec, fs, batch_size, n_batches_total):
+    """Number of leading batches within the first `freeze_sec` seconds of a
+    recording, capped at the total batch count.
+
+    Used to scope batch-sampling steps (e.g. whitening matrix and universal
+    template estimation) to the same freeze window as clustering, so that
+    `settings['freeze_sec']` is the single source of truth for how much of
+    the recording is used to fit models. Returns `n_batches_total` if
+    `freeze_sec` is not finite (i.e. freezing is disabled).
+    """
+    if not np.isfinite(freeze_sec):
+        return n_batches_total
+    return min(int(np.ceil(freeze_sec * fs / batch_size)), n_batches_total)
+
+
 def template_path(basename='wTEMP.npz'):
     """ currently only one set of example templates to use"""
     return cache_template_path(basename)
