@@ -4,6 +4,7 @@ import json
 import os
 from scipy import signal
 from scipy.signal import butter, filtfilt
+from kilosort.template_matching import prepare_matching
 
 # --- Helper Function for C Header Export ---
 
@@ -125,36 +126,36 @@ def group_templates(indices, probe):
 
 def main():
     # --- 1. Set your directory ---
-    #
-    export_dir = "/data/results/mds2_res/flows_final_shift/updated_dshift/gui-online-shift/export"
-    offline_dir = "/data/results/mds2_res/flows_final_shift/updated_dshift/gui-online-shift"
-    result_dir = "/data/spiking_algorithm/mds2"
+    export_dir = "/data/results/mP79_res/IIR/time/3600/"
+    result_dir = "/data/spiking_algorithm/mp79"
     num_shanks = 8  # Set this according to your probe geometry
+    
     # --- 2. Load Ops ---
-    ops_path = os.path.join(offline_dir, "ops.npy")
+    ops_path = os.path.join(export_dir, "ops.npy")
     ops = np.load(ops_path, allow_pickle=True).item()
 
     # --- 3. Load Wall (Templates) ---
     Wall_np = np.load(os.path.join(export_dir, "Wall.npy"))
     Wall_h = os.path.join(result_dir, "Wall.h")
     Wall_masked_np = mask_Wall(Wall_np, ops)
-    write_c_float_header(Wall_masked_np, "Wall", Wall_h)
+    #write_c_float_header(Wall_masked_np, "Wall", Wall_h)
 
     # --- 4. Export nm[] — one scalar per template ---
     Wall_nm_masked = (Wall_masked_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
-    #Wall_nm_np = np.load(os.path.join(export_dir, "Wall_nm.npy"))  #uncomment in case needed non sparse Wall
+    Wall_nm = (Wall_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
     nm_h = os.path.join(result_dir, "Wall_nm.h")
-    write_c_float_header(Wall_nm_masked, "Wall_nm", nm_h)
-
+    write_c_float_header(Wall_nm, "Wall_nm", nm_h)
 
     # --- 5. Export Th_learned (detection threshold) ---
     Th_learned = float(ops.get("Th_learned", 8.0))
     print(f"Th_learned = {Th_learned}  (compare scores against {Th_learned**2:.2f} in C)")
     
     # --- 6. Load 'wPCA' (PC templates) ---
-    WPCA_np = np.load(os.path.join(export_dir, "wPCA.npy"))
-    WPCA_h = os.path.join(result_dir, "wPCA.h")
-    write_c_float_header(WPCA_np, "wPCA", WPCA_h)
+    wPCA = ops.get('wPCA', None)
+    if wPCA is not None:
+        wPCA = wPCA.detach().cpu().numpy() if torch.is_tensor(wPCA) else wPCA
+    wPCA_h = os.path.join(result_dir, "wPCA.h")
+    write_c_float_header(wPCA, "wPCA", wPCA_h)
 
     # --- 7. Extract and Write Wrot (Whitening Matrix) ---
     Wrot = ops.get("Wrot", None)
@@ -166,7 +167,7 @@ def main():
     else:
         print("Wrot not found in ops.")
 
-    # --- 8. Extract and Write Mul (Drift Shift * whitening) ---
+    """ # --- 8. Extract and Write Mul (Drift Shift * whitening) ---
     Wsh = np.load(os.path.join(export_dir, "Wsh.npy"))
     if Wsh is not None:
         if isinstance(Wsh, torch.Tensor):
@@ -183,21 +184,21 @@ def main():
     print(f"Wsh_per_batch shape: {Wsh_pb.shape} -> {n_batches} batches")
     Wsh_pb_h = os.path.join(result_dir, "Wsh_per_batch.h")
     write_c_float_header(Wsh_pb.astype(np.float32), "Wsh_per_batch", Wsh_pb_h)
-
+    """
     # --- 9. Get IIR filter weights 
     get_iir_weights(result_dir)
 
     # --- 10. Get template groups according to locations
     # Outputs an array such that the index is the templates id and the value is the group number according to location.
-    indices_path = os.path.join(offline_dir, "pc_feature_ind.npy")
-    probe_path = os.path.join(result_dir, "probe_mds2.json")  #change probe name
+    """ indices_path = os.path.join(export_dir, "pc_feature_ind.npy")
+    probe_path = os.path.join(result_dir, "probe_mp79.json")  #change probe name
     with open(probe_path, 'r') as f:     #change probe name
         probe = json.load(f)
     indices = np.load(indices_path, allow_pickle=True)
     groups_np = group_templates(indices, probe)
     print(np.unique(groups_np, axis=0).shape[0], "groups;", np.bincount(groups_np).sum(), "assigned")
     template_groups_h = os.path.join(result_dir, "spatial_template_groups.h")
-    write_c_float_header(groups_np, "spatial_template_groups", template_groups_h)
+    write_c_float_header(groups_np, "spatial_template_groups", template_groups_h) """
 
 if __name__ == "__main__":
     main()

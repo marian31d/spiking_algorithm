@@ -11,7 +11,7 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import TruncatedSVD
 from tqdm import tqdm
 
-from kilosort.utils import template_path, log_performance
+from kilosort.utils import template_path, log_performance, freeze_n_batches
 
 
 def my_max2d(X, dt):
@@ -48,11 +48,13 @@ def extract_snippets(X, nt, twav_min, Th_single_ch, loc_range=[4,5],
     return clips
 
 def extract_wPCA_wTEMP(ops, bfile, nt=61, twav_min=20, Th_single_ch=6, nskip=25,
-                       device=torch.device('cuda')):
+                       n_batches=None, device=torch.device('cuda')):
 
+    if n_batches is None:
+        n_batches = bfile.n_batches
     clips = np.zeros((500000,nt), 'float32')
     i = 0
-    for j in range(0, bfile.n_batches, nskip):
+    for j in range(0, n_batches, nskip):
         X = bfile.padded_batch_to_torch(j, ops)
         
         clips_new = extract_snippets(X, nt=nt, twav_min=twav_min,
@@ -213,9 +215,14 @@ def run(ops, bfile, device=torch.device('cuda'), progress_bar=None,
     if ops['settings']['templates_from_data']:
         logger.info('Re-computing universal templates from data.')
         # Determine templates and PC features from data.
+        n_batches_freeze = freeze_n_batches(
+            ops['settings']['freeze_sec'], ops['settings']['fs'],
+            ops['settings']['batch_size'], bfile.n_batches
+            )
         ops['wPCA'], ops['wTEMP'] = extract_wPCA_wTEMP(
-            ops, bfile, nt=ops['nt'], twav_min=ops['nt0min'], 
-            Th_single_ch=ops['settings']['Th_single_ch'], nskip=25,
+            ops, bfile, nt=ops['nt'], twav_min=ops['nt0min'],
+            Th_single_ch=ops['settings']['Th_single_ch'],
+            nskip=ops['settings']['nskip'], n_batches=n_batches_freeze,
             device=device
             )
     else:
