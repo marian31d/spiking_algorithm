@@ -79,8 +79,33 @@ def extract(ops, bfile, U, device=torch.device('cuda'), progress_bar=None):
         for ibatch in prog:
             if ibatch % 100 == 0:
                 log_performance(logger, 'debug', f'Batch {ibatch}')
-
             X = bfile.padded_batch_to_torch(ibatch, ops)
+            ###############DEBUG##############
+            # if ibatch == 0:
+            #     n_chans_used = len(ops['chanMap'])
+            #     n_batches = ops['Nbatches']
+            #     nt = ops['nt']
+            #     NT = ops['batch_size']
+            #     weights = np.linspace(1, 0, 2*nt+2)[1:-1]
+            #     dtype = ops['data_dtype']
+            #     n_chans = ops['n_chan_bin']
+            #     z = np.memmap("/data/results/mP79_res/flows_final_shift/updated_dshift/gui-online-shift/debug/prep_data.dat", dtype='int16', mode='r+',
+            #           shape=(NT*n_batches, n_chans))
+            #     batch2 = bfile.padded_batch_to_torch(ibatch+1, ops=ops)
+            #     W = np.vstack([weights, np.flip(weights)])
+            #     W = np.tile(W, n_chans_used).reshape(2, n_chans_used, 2*nt)
+            #     x1 = X[:, (NT-1) + 1:].cpu().numpy()
+            #     x2 = batch2[:, :2*nt].cpu().numpy()
+            #     L = np.vstack([x1[np.newaxis,...], x2[np.newaxis,...]])
+            #     y2 = (L*W).sum(axis=0).T
+                
+            #     # Write raw data, leaving out padding and first nt values
+            #     y1 = X[:, nt*2:-nt].cpu().numpy().T
+            #     z[(ibatch*NT)+(nt) : ((ibatch+1)*NT), ops['chanMap']] = (y1).astype('int16')
+            #     z[((ibatch+1)*NT)-nt : ((ibatch+1)*NT)+nt, ops['chanMap']] = (y2).astype('int16')
+            #     z.flush()
+            #     del(z)
+            ##################################
             stt, amps, th_amps, Xres = run_matching(ops, X, U, ctc, device=device)
             xfeat = Xres[iCC[:, iU[stt[:,1:2]]],stt[:,:1] + tiwave] @ ops['wPCA'].T
             xfeat += amps * Ucc[:,stt[:,1]]
@@ -179,7 +204,6 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
 
     B = conv1d(X.unsqueeze(1), W.unsqueeze(1), padding=nt//2)
     B = torch.einsum('ijk, kjl -> il', U, B)
-
     trange = torch.arange(-nt, nt+1, device=device) 
     tiwave = torch.arange(-(nt//2), nt//2+1, device=device) 
 
