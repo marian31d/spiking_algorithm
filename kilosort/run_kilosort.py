@@ -35,7 +35,7 @@ from kilosort import (preprocessing, datashift, template_matching, clustering_qr
 from kilosort.parameters import DEFAULT_SETTINGS
 from kilosort.utils import (
     log_performance, log_cuda_details, probe_as_string, ops_as_string,
-    get_performance, log_sorting_summary, log_thread_count
+    get_performance, log_sorting_summary, log_thread_count, freeze_n_batches
     )
 import kilosort.plots as kplots
 
@@ -50,6 +50,33 @@ GUI_SETTINGS = [
     'data_file_path', 'probe', 'data_dtype', 'save_preprocessed_copy',
     'clear_cache', 'do_CAR', 'invert_sign', 'verbose_log'
 ]
+
+
+def _freeze_mask_seconds(times_sec, freeze_sec):
+    """Boolean mask for spikes within the first `freeze_sec` of the recording.
+
+    `times_sec` must already be in units of seconds, as returned by
+    `spikedetect.run`.
+    """
+    return times_sec < freeze_sec
+
+
+def _freeze_mask_samples(times_samples, freeze_sec, fs):
+    """Boolean mask for spikes within the first `freeze_sec` of the recording.
+
+    `times_samples` must be in units of samples, as returned by
+    `template_matching.extract`.
+    """
+    return times_samples < freeze_sec * fs
+
+
+def _check_freeze_nonempty(mask, freeze_sec):
+    if mask.sum() == 0:
+        raise ValueError(
+            f'No spikes detected within freeze_sec={freeze_sec}s, cannot '
+            'continue sorting. Increase `freeze_sec` or check that the '
+            'recording contains spikes near the start.'
+            )
 
 
 def run_kilosort(settings, probe=None, probe_name=None, filename=None,
@@ -336,33 +363,36 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
         else:
             kplots.plot_diagnostics(Wall0, clu0, ops, results_dir)
         ###########################################################
-        # # Freeze: only use first hour spikes for final clustering/merging
-        # freeze_sample = int(3600.0 * ops['settings']['fs'])
-        # mask = st[:, 0] < freeze_sample
-        # st_freeze = st[mask]
-        # tF_freeze = tF[mask]
+        # Freeze: final clustering/merging only uses spikes within the
+        # first `settings['freeze_sec']` seconds. st time is in samples here.
+        mask = _freeze_mask_samples(
+            st[:, 0], ops['settings']['freeze_sec'], ops['settings']['fs']
+            )
+        _check_freeze_nonempty(mask, ops['settings']['freeze_sec'])
+        st_freeze = st[mask]
+        tF_freeze = tF[mask]
         ###########################################################
         clu, Wall, st, tF = cluster_spikes(
-            st, tF, ops, device, bfile, tic0=tic0, progress_bar=progress_bar,   #change tF and st to frozen ones
+            st_freeze, tF_freeze, ops, device, bfile, tic0=tic0, progress_bar=progress_bar,
             clear_cache=clear_cache, verbose=verbose_log,
             )
         #################################################################################
         # Re-run template matching on full recording with frozen Wall
         # st[:,1] gives cluster assignment for every spike
-        # logger.info('Re-extracting spikes on full recording with frozen templates...')
-        # Wall = Wall.to(device)  # ensure Wall is on the correct device
+        logger.info('Re-extracting spikes on full recording with frozen templates...')
+        Wall = Wall.to(device)  # ensure Wall is on the correct device
 
-        # #permute from (n_clusters, n_chans, n_pcs) to (n_clusters, n_pcs, n_chans)
-        # n_pcs = int(ops['settings']['n_pcs'])
-        # if Wall.shape[1] != n_pcs:
-        #     Wall_match = Wall.permute(0, 2, 1).contiguous()
-        # else:
-        #     Wall_match = Wall
+        # permute from (n_clusters, n_chans, n_pcs) to (n_clusters, n_pcs, n_chans)
+        n_pcs = int(ops['settings']['n_pcs'])
+        if Wall.shape[1] != n_pcs:
+            Wall_match = Wall.permute(0, 2, 1).contiguous()
+        else:
+            Wall_match = Wall
 
-        # st, tF, ops = template_matching.extract(
-        #     ops, bfile, Wall_match, device=device, progress_bar=progress_bar
-        # )
-        # clu_full = st[:, 1].astype('int32')
+        st, tF, ops = template_matching.extract(
+            ops, bfile, Wall_match, device=device, progress_bar=progress_bar
+        )
+        clu_full = st[:, 1].astype('int32')
 
         Wall_np = Wall.detach().cpu().numpy() if torch.is_tensor(Wall) else Wall
         np.save(os.path.join(results_dir, "Wall.npy"), Wall_np)
@@ -371,7 +401,7 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
         #################################################################################
         ops, similar_templates, is_ref, est_contam_rate, kept_spikes = \
             save_sorting(
-                ops, results_dir, st, clu, tF, Wall, bfile.imin, tic0,  #change clu to clu_full
+                ops, results_dir, st, clu_full, tF, Wall, bfile.imin, tic0,  #change clu to clu_full
                 save_extra_vars=save_extra_vars,
                 save_preprocessed_copy=save_preprocessed_copy,
                 skip_dat_path=(file_object is not None)
@@ -384,11 +414,11 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
 
         logger.info('Generating spike position plot ...')
         if gui_sorter is not None:
-            gui_sorter.clu = clu[kept_spikes] #change clu to clu_full
+            gui_sorter.clu = clu_full[kept_spikes] #change clu to clu_full
             gui_sorter.is_refractory = is_ref
             gui_sorter.plotDataReady.emit('probe')
         else:
-            kplots.plot_spike_positions(clu[kept_spikes], is_ref, results_dir)  #change clu to clu_full
+            kplots.plot_spike_positions(clu_full[kept_spikes], is_ref, results_dir)  #change clu to clu_full
         logger.info('Sorting finished.')
         log_sorting_summary(ops, log=logger, level='info')
         
@@ -408,7 +438,7 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
         close_logger()
 
     #change clu to clu_full
-    return ops, st, clu, tF, Wall, similar_templates, \
+    return ops, st, clu_full, tF, Wall, similar_templates, \
            is_ref, est_contam_rate, kept_spikes
 
 
@@ -533,6 +563,12 @@ def initialize_ops(settings, probe, data_dtype, do_CAR, invert_sign,
     """Package settings and probe information into a single `ops` dictionary."""
 
     settings = settings.copy()
+    if settings['freeze_sec'] == 0:
+        # 0 is ambiguous with "no restriction" in plain language, but means
+        # the opposite here (freeze to zero seconds of data), which is
+        # degenerate and breaks whitening/template fitting. Treat it as an
+        # alias for "freezing disabled", same as the actual default.
+        settings['freeze_sec'] = np.inf
     if settings['nt0min'] is None:
         settings['nt0min'] = int(20 * settings['nt']/61)
     if settings['max_channel_distance'] is None:
@@ -672,8 +708,12 @@ def compute_preprocessing(ops, device, tic0=np.nan, file_object=None):
     logger.info(f'N seconds: {bfile.n_samples/fs}')
     logger.info(f'N batches: {bfile.n_batches}')
 
+    n_batches_freeze = freeze_n_batches(
+        ops['settings']['freeze_sec'], fs, NT, bfile.n_batches
+        )
     whiten_mat = preprocessing.get_whitening_matrix(bfile, xc, yc, nskip=nskip,
-                                                    nrange=whitening_range)
+                                                    nrange=whitening_range,
+                                                    n_batches=n_batches_freeze)
 
 
     # Save results
@@ -836,13 +876,13 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
         ops, bfile, device=device, progress_bar=progress_bar,
         clear_cache=clear_cache, verbose=verbose
         )
-    #######################################################                
-    # # Freeze: only use first hour for template learning
-    # FREEZE_SEC = 3600.0
-    # freeze_sample = int(FREEZE_SEC * ops['settings']['fs'])
-    # mask = st0[:, 0] < freeze_sample
-    # st0_freeze = st0[mask]
-    # tF_freeze = torch.from_numpy(tF[mask])
+    #######################################################
+    # Freeze: initial clustering only uses spikes within the first
+    # `settings['freeze_sec']` seconds. st0 time is in seconds here.
+    mask = _freeze_mask_seconds(st0[:, 0], ops['settings']['freeze_sec'])
+    _check_freeze_nonempty(mask, ops['settings']['freeze_sec'])
+    st0_freeze = st0[mask]
+    tF_freeze = torch.from_numpy(tF[mask])
     #######################################################
     tF = torch.from_numpy(tF)
 
@@ -864,14 +904,14 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
 
     tic = time.time()
     logger.info(' ')
-    logger.info('First clustering')
+    logger.info(f"First clustering - freeze_sec: {ops['settings']['freeze_sec']}")
     logger.info('-'*40)
     clu, Wall = clustering_qr.run(
-        ops, st0, tF, mode='spikes', device=device, progress_bar=progress_bar,  #revert st and tf to frozen ones
+        ops, st0_freeze, tF_freeze, mode='spikes', device=device, progress_bar=progress_bar,
         clear_cache=clear_cache, verbose=verbose
         )
     Wall3 = template_matching.postprocess_templates(
-        Wall, ops, clu, st0, tF, device=device
+        Wall, ops, clu, st0_freeze, tF_freeze, device=device
         )
 
     elapsed = time.time() - tic
