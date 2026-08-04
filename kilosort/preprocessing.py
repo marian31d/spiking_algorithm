@@ -93,13 +93,19 @@ def get_fwav(NT = 30122, fs = 30000, device=torch.device('cuda')):
 
     return fwav
 
-def get_whitening_matrix(f, xc, yc, nskip=25, nrange=32):
-    """Get the whitening matrix, use every nskip batches."""
+def get_whitening_matrix(f, xc, yc, nskip=25, nrange=32, n_batches=None):
+    """Get the whitening matrix, use every nskip batches.
+
+    `n_batches` limits how many leading batches are scanned, e.g. to match
+    `settings['freeze_sec']`. Defaults to the full file (`f.n_batches`).
+    """
     n_chan = len(f.chan_map)
+    if n_batches is None:
+        n_batches = f.n_batches
     # collect the covariance matrix across channels
     CC = torch.zeros((n_chan, n_chan), device=f.device)
     k = 0
-    for j in range(0, f.n_batches-1, nskip):
+    for j in range(0, n_batches, nskip):
         # load data with high-pass filtering (see the Binary file class)
         X = f.padded_batch_to_torch(j)        
         
