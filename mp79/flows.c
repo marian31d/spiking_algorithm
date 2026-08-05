@@ -16,7 +16,7 @@
 
 #define NCHAN_BIN 136
 #define NCHAN 124
-#define NCLU 180        //Number of clusters, should be configured on the RAM
+#define NCLU 93        //Number of clusters, should be configured on the RAM
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 #define LAG 3
@@ -31,7 +31,7 @@
 
 #define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
-#define WIN_END_OFFSET (NT_TRIG - 1 - PEAK_OFFSET)   // 61-1-20 = 40  (was 2 when NT_TRIG=23)
+#define WIN_END_OFFSET (NT_TRIG - 1 - PEAK_OFFSET)   // 61-1-20 = 40 
 #define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
 #define ENABLE_PEEL_SUBTRACT 1
 
@@ -39,8 +39,8 @@
 #define CC 16
 #define CC_MASK (CC - 1)
 static uint32_t cc_time[CC];
-static float    cc_cf[CC][NCLU];
-static float    cc_dot[CC][NCLU];     // ADD: cache dot too
+static float cc_cf[CC][NCLU];
+static float cc_dot[CC][NCLU];     // ADD: cache dot too
 
 //DEBUG
 #define CF_DUMP_N 72000000
@@ -282,8 +282,8 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
                 best_t=t; best_peak=peak_t;
             }
             fprintf(cf_trace, "%u, %f, %u\n", i, cf_best[t], t);
-            printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
-            i, best_cf, best_t, best_t >= 0 ? lag_best[best_t] : 0);
+            printf("sample: %u, win_cf: %f, template_id: %d, lag: %d, peel number: %d\n",
+            i, best_cf, best_t, best_t >= 0 ? lag_best[best_t] : 0, peel);
         }
         if (best_t < 0) return 0;                       // nothing eligible left at this location
 
@@ -359,11 +359,11 @@ void save_npy(const char* filename, void* data, size_t num_elements, size_t elem
 
 int main() {
     char filename[] = "/data/mP79/dat/mP79_17/mP79_17.dat";
-    char results_dir[] = "/data/results/mP79_res/flows_c/";
+    char results_dir[] = "/data/results/mP79_res/flows_c/1peel/";
 
     /////////////////////DEBUG/////////////////////////
-    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/cf_trace.txt", "w");
-    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/data_trace.txt", "w");
+    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/1peel/cf_trace.txt", "w");
+    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/1peel/data_trace.txt", "w");
 
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");
@@ -388,15 +388,11 @@ int main() {
 
     uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
     fseeko(fptr, (int64_t)byte_offset, SEEK_SET);
-
-    // Add temporarily in main, before the loop:
-    for (int t = 0; t < NCLU; t++)
-        printf("Wall_nm[%d] = %f\n", t, Wall_nm[t]);
     
     //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
     //if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
 //120010
-    for (uint32_t i = 0; i < binary_size; i++) {
+    for (uint32_t i = 0; i < 120010; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
