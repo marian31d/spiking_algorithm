@@ -33,7 +33,7 @@
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
 #define WIN_END_OFFSET (NT_TRIG - 1 - PEAK_OFFSET)   // 61-1-20 = 40 
 #define V_TH 4.0f                // magnitude trigger on whitened data — TUNE
-#define ENABLE_PEEL_SUBTRACT 1
+#define ENABLE_PEEL_SUBTRACT 0
 
 // cyclic cache of cf-arrays keyed by absolute window-end time
 #define CC 16
@@ -56,7 +56,7 @@ static float cc_dot[CC][NCLU];     // ADD: cache dot too
 //those structures should be located in TCM
 typedef struct {
     float raw_data[RB][NCHAN]; 
-    uint32_t head;
+    int32_t head;
 }SampleBuffer;
 
 typedef struct {
@@ -68,8 +68,8 @@ typedef struct {
 static SampleBuffer sample;
 static uint32_t num_spikes = 0;
 
-static uint32_t last_commit_i[NCLU];  // per-neuron refractory clock
-static uint32_t last_any_commit; static float last_any_cf; //per nt timewindow refractory for each peel
+static int32_t last_commit_i[NCLU];  // per-neuron refractory clock
+static int32_t last_any_commit; static float last_any_cf; //per nt timewindow refractory for each peel
 
 
 //filter history variables - should be located in TCM for speed
@@ -135,7 +135,7 @@ static float kth_smallest(float *buf, int n, int k) {
 }
 
 int filter_sample(SampleBuffer *sample, uint32_t i) {
-    uint32_t h = sample->head;
+    int32_t h = sample->head;
 
     // 1. Filter each sample
     for (int c = 0; c < NCHAN; c++){    
@@ -180,7 +180,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
     printf("\n"); */
     return(0);
 }
-static inline void score_at(SampleBuffer *sample, uint32_t head_at,
+static inline void score_at(SampleBuffer *sample, int32_t head_at,
                             float *cf_all, float *dot_all) {
     float pc[NCHAN][NPCS];
     for (int c = 0; c < NCHAN; c++)
@@ -202,9 +202,9 @@ static inline void score_at(SampleBuffer *sample, uint32_t head_at,
 }
 
 // returns cf array for abs time T; computes only on a miss
-static inline void cf_for(SampleBuffer *sample, uint32_t head_at, uint32_t T,
+static inline void cf_for(SampleBuffer *sample, int32_t head_at, int32_t T,
                           float **cf_out, float **dot_out) {
-    uint32_t s = T & CC_MASK;
+    int32_t s = T & CC_MASK;
     if (cc_time[s] != T) {
         score_at(sample, head_at, cc_cf[s], cc_dot[s]);   // both, no scratch discard
         cc_time[s] = T;
@@ -215,11 +215,11 @@ static inline void cf_for(SampleBuffer *sample, uint32_t head_at, uint32_t T,
 
 // static inline suggests the compiler inline the assembly to avoid call overhead
 // returns 1 and sets *peak_end_head if a magnitude peak is CONFIRMED 3 samples back
-static inline int confirm_peak_evt(SampleBuffer *sample, uint32_t *end_center) {
-    uint32_t h  = sample->head;
-    uint32_t pk = (h - (WIN_END_OFFSET + 1 + LAG)) & RING_MASK;   // was h-(3+LAG)
-    uint32_t a  = (pk + 1) & RING_MASK;     // after peak
-    uint32_t b  = (pk - 1) & RING_MASK;     // before peak
+static inline int confirm_peak_evt(SampleBuffer *sample, int32_t *end_center) {
+    int32_t h = sample->head;
+    int32_t pk = (h - (WIN_END_OFFSET + 1 + LAG)) & RING_MASK;   // was h-(3+LAG)
+    int32_t a = (pk + 1) & RING_MASK;     // after peak
+    int32_t b = (pk - 1) & RING_MASK;     // before peak
     for (int c = 0; c < NCHAN; c++) {
         float vpk = fabsf(sample->raw_data[pk][c]);
         if (vpk < V_TH) continue;
@@ -227,6 +227,8 @@ static inline int confirm_peak_evt(SampleBuffer *sample, uint32_t *end_center) {
         float vb = fabsf(sample->raw_data[b][c]);
         if (vpk >= va && vpk >= vb) {
             *end_center = (pk + WIN_END_OFFSET) & RING_MASK;       // window ends 40 past peak
+            printf("___________________________________________________________________\n");
+            printf("Confirmed peak: %u\n", pk);
             return 1;
         }
     }
@@ -236,54 +238,57 @@ static inline int confirm_peak_evt(SampleBuffer *sample, uint32_t *end_center) {
 int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
                    uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i, FILE *cf_trace) {
     static float cf_best[NCLU], dot_best[NCLU];
-    static int   lag_best[NCLU];
+    static int lag_best[NCLU];
 
-    uint32_t end_center;
+    int32_t end_center;
     if (!confirm_peak_evt(sample, &end_center)) return 0;          // stage 1: gate
-
-    uint32_t T0        = (i >= (uint32_t)(LAG)) ? (i - (1 + LAG)) : 0;
-    uint32_t base_peak = (i >= (uint32_t)(WIN_END_OFFSET + 1 + LAG))
+    printf("peak at sample: %u, end_center: %u\n", i, end_center);
+    int32_t T0 = (i >= (int32_t)(LAG + 1)) ? (i - (LAG + 1)) : 0;
+    int32_t base_peak = (i >= (int32_t)(WIN_END_OFFSET + 1 + LAG))
                          ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0;
     
     // matching-pursuit: detect strongest, subtract, re-detect on residual, up to MAX_PEELS
     for (int peel = 0; peel < MAX_PEELS; peel++) {
-
         // stage 2: lag search — recomputed each peel because data changed after subtraction
         for (int t = 0; t < NCLU; t++) cf_best[t] = -1.0f;
         for (int d = -LAG; d <= LAG; d++) {
-            uint32_t head_at = (end_center + d) & RING_MASK;
+            int32_t head_at = (end_center + d) & RING_MASK;
             float *cf, *dot;
-            cf_for(sample, head_at, T0 + (uint32_t)d, &cf, &dot);  // computed once across triggers/peels
+            cf_for(sample, head_at, T0 + (int32_t)d, &cf, &dot);  // computed once across triggers/peels
+            printf("template 15 cf score: %f, lag: %d\n", cf[15], d);
             for (int t = 0; t < NCLU; t++)
                 if (cf[t] > cf_best[t]) { cf_best[t]=cf[t]; dot_best[t]=dot[t]; lag_best[t]=d; }
         }
 
         /////////////////////DEBUG (first peel pass only)/////////////////////
-        // if (peel == 0 && i >= CF_DUMP_N && i <= CF_DUMP_N + 400u) {
-        //     float win_cf = 0.0f; int win_temp = -1;
-        //     for (int t = 0; t < NCLU; t++) if (cf_best[t] > win_cf) { win_cf = cf_best[t]; win_temp = t; }
-        //     for (int t = 0; t < NCLU; t++)
-        //         fprintf(cf_trace, "%u, %f\n", i, cf_best[t]);
-        //     printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
-        //            i, win_cf, win_temp, win_temp >= 0 ? lag_best[win_temp] : 0);
-        // }
+        if (peel == 0 && i >= CF_DUMP_N && i <= CF_DUMP_N + 1000u) {
+            float win_cf = 0.0f; int win_temp = -1;
+            for (int t = 0; t < NCLU; t++) if (cf_best[t] > win_cf) { win_cf = cf_best[t]; win_temp = t; }
+            for (int t = 0; t < NCLU; t++)
+                fprintf(cf_trace, "%u, %f\n", base_peak, cf_best[t]);
+            //printf("sample: %u, win_cf: %f, template_id: %d, lag: %d\n",
+            //       i, win_cf, win_temp, win_temp >= 0 ? lag_best[win_temp] : 0);
+        } 
         //////////////////////////////////////////////////////////////////////
 
         // best eligible template: above threshold AND not refractory (per-template peak time)
         int best_t = -1; float best_cf = 0.0f, best_dot = 0.0f; int best_lag = 0;
-        uint32_t best_peak = base_peak;
+        int32_t best_peak = base_peak;
         for (int t = 0; t < NCLU; t++) {
             if (cf_best[t] <= TH_LEARNED_SQ) continue;
-            uint32_t peak_t = base_peak + lag_best[t];
-            if (peak_t - last_commit_i[t] < REFRACTORY_SAMPLES) continue;       //maybe useless
-            if ((peak_t - last_any_commit < nt) && cf_best[t] < last_any_cf) continue;
+            int32_t peak_t = base_peak + lag_best[t];
+            int32_t local_diff = peak_t - last_commit_i[t];
+            int32_t global_diff = peak_t - last_any_commit;
+            if (local_diff < REFRACTORY_SAMPLES) continue;       //maybe useless
+            if (global_diff < nt && cf_best[t] < last_any_cf) continue; //
+            printf("peak_t: %u, last_any_commit: %u\n", peak_t, last_any_commit);
             if (cf_best[t] > best_cf) {
                 best_cf=cf_best[t]; best_dot=dot_best[t]; best_lag=lag_best[t];
                 best_t=t; best_peak=peak_t;
             }
-            fprintf(cf_trace, "%u, %f, %u\n", i, cf_best[t], t);
-            printf("sample: %u, win_cf: %f, template_id: %d, lag: %d, peel number: %d\n",
-            i, best_cf, best_t, best_t >= 0 ? lag_best[best_t] : 0, peel);
+            //fprintf(cf_trace, "%u, %f, %u\n", i, cf_best[t], t);
+            if (i < CF_DUMP_N + 72000000) printf("sample: %u, iteration t: %d, win_cf: %f, template_id: %d, lag: %d, peel number: %d\n",
+            i, t, best_cf, best_t, best_t >= 0 ? lag_best[best_t] : 0, peel);
         }
         if (best_t < 0) return 0;                       // nothing eligible left at this location
 
@@ -297,12 +302,13 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         }
         last_commit_i[best_t] = best_peak;
         last_any_commit = best_peak;
+        printf("last any commit: %u\n", last_any_commit);
         last_any_cf = best_cf;
 
 #if ENABLE_PEEL_SUBTRACT
         // subtract at the SAME ring slots scoring read: head-relative window-end of the
         // WINNING lag, not absolute best_peak. This cancels exactly the matched-filter energy.
-        uint32_t best_end = (end_center + best_lag) & RING_MASK;
+        int32_t best_end = (end_center + best_lag) & RING_MASK;
         for (int c = 0; c < NCHAN; c++)
             for (int ts = 0; ts < nt; ts++) {
                 float recon = 0.0f;
@@ -392,7 +398,7 @@ int main() {
     //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
     //if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
 //120010
-    for (uint32_t i = 0; i < 120010; i++) {
+    for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
         int r_ret = dma_read_block(fptr, i, &sample);
         if (r_ret == 1) { // Check for error loading batch
