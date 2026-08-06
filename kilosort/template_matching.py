@@ -218,7 +218,7 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
     for t in range(max_peels):
         # Cf = 2 * B - nm.unsqueeze(-1) 
         # Cf is shape (n_units, n_times)
-        Cf = torch.relu(B)**2 /nm.unsqueeze(-1)
+        Cf = torch.relu(B)**2 /nm.unsqueeze(-1) #size: (n_units, T)
         #a = 1 + lam
         #b = torch.relu(B) + lam * mu.unsqueeze(-1)
         #Cf = b**2 / a - lam * mu.unsqueeze(-1)**2
@@ -241,7 +241,7 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
             break
 
         iX = xs[:,:1]
-        iY = imax[iX]
+        iY = imax[iX] #imax is the indexes of the max template for each time point
 
         #isort = torch.sort(iX)
 
@@ -250,16 +250,27 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
         st[k:k+nsp, 1] = iY[:,0]
         amps[k:k+nsp] = B[iY,iX] / nm[iY]
         amp = amps[k:k+nsp]
-        th_amps[k:k+nsp] = Cmax[0, 0, iX[:,0], None]**.5
+        # Raw score compared against Th**2 in cnd1/against Cfmax in cnd2 above,
+        # not an amplitude -- no sqrt, to match that comparison exactly.
+        th_amps[k:k+nsp] = Cmax[0, 0, iX[:,0], None]
 
         k+= nsp
 
         #amp = B[iY,iX] 
+        if t==1:
+            Cmax1_np = Cmax.detach().cpu().numpy()
+            result_dir = "/data/results/mP79_res/IIR/time/3600/1peel/2ndOrd-filt/Cmax_1.npy"
+            np.save(result_dir, Cmax1_np)
+        if t==2:
+            Cmax2_np = Cmax.detach().cpu().numpy()
+            result_dir = "/data/results/mP79_res/IIR/time/3600/1peel/2ndOrd-filt/Cmax_2.npy"
+            np.save(result_dir, Cmax2_np)
 
         n = 2
         for j in range(n):
             Xres[:, iX[j::n] + tiwave]  -= amp[j::n] * torch.einsum('ijk, jl -> kil', U[iY[j::n,0]], W)
             B[   :, iX[j::n] + trange]  -= amp[j::n] * ctc[:,iY[j::n,0],:]
+            
 
     st = st[:k]
     amps = amps[:k]
