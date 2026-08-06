@@ -41,6 +41,8 @@ def print_group(name, ops):
         print(f"{key:25s}: {val}")
 
 
+
+
 def main():
     parser = argparse.ArgumentParser(description="Extract parameters from ops.npy")
     parser.add_argument("ops_path", type=str, help="Path to ops.npy")
@@ -57,9 +59,18 @@ def main():
     for group in PARAM_GROUPS:
         print_group(group, ops)
 
+    print("\n==========================================\n")
+    print("Th_learned:", ops.get("Th_learned"))
     print("tmin:", ops.get("tmin"))
     print("tmax:", ops.get("tmax"))
-
+    print("iCC:", ops.get("iCC").shape)
+    print("batch_size:", ops.get("batch_size"))
+    print("Wrot", "max: ", np.max(ops.get("Wrot")), "min: ", np.min(ops.get("Wrot")), "type: ", ops.get("Wrot").dtype, "dimensions: ", ops.get("Wrot").shape)
+    print("dshift:", "max: ", np.max(ops.get("dshift")), "min: ", np.min(ops.get("dshift")), "type: ", ops.get("dshift").dtype, "dimensions: ", ops.get("dshift").shape)
+    print("max_peels:", ops["max_peels"])
+    print("nearest_chans", ops.get("nearest_chans"))
+    print("wPCA", ops.get("wPCA"))
+    print(ops['probe'])
 
 if __name__ == "__main__":
     main()

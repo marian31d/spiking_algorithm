@@ -6,6 +6,7 @@ import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 
 """
 Plot comparison tables from a CSV file.
@@ -54,7 +55,7 @@ def parse_table_block(block: str, sep: str = ",") -> pd.DataFrame:
         raise RuntimeError(f"Failed to parse a table block as CSV (sep='{sep}'): {e}")
 
 
-def plot_table(df: pd.DataFrame, title: str, duration: float):
+def plot_table(df: pd.DataFrame, title: str, xtitle: str, ytitle: str, duration: float, name: str):
     """
     - First row = x axis (excluding first column)
     - Each next row = one line
@@ -71,7 +72,6 @@ def plot_table(df: pd.DataFrame, title: str, duration: float):
     if len(x) > 0:
         x = x / duration
 
-
     # Labels from first column (excluding header row)
     labels = df.iloc[1:, 0].astype(str).tolist()
 
@@ -82,19 +82,19 @@ def plot_table(df: pd.DataFrame, title: str, duration: float):
     n = min(len(x), y_df.shape[1])
     x = x[:n]
 
-    plt.figure(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
 
     for lbl, row in zip(labels, y_df.values):
-        plt.plot(x, row, label=lbl)
+        ax.plot(x, row, marker='o',ms = 4, label=lbl)
 
-    plt.xlabel("X (from first row)")
-    plt.ylabel("Percentage (%)")
-    plt.title(title)
-    plt.grid(True, alpha=0.3)
+    ax.set_xlabel(xtitle)
+    ax.set_ylabel(ytitle)
+    ax.set_title(title)
+    ax.grid(True, color='#d8dcd6')
 
-
-    plt.legend(fontsize=8, loc="best")
-    plt.tight_layout()
+    ax.legend(fontsize=8, loc="best")
+    fig.tight_layout()
+    plt.savefig(name + ".png", dpi=300)
     plt.show()
 
 
@@ -114,9 +114,10 @@ def main():
     blocks = split_tables(csv_file)
     print(f"Found {len(blocks)} table block(s) separated by blank lines.")
 
-    for i, block in enumerate(blocks, start=1):
+    titles = [["Learning time", "Time (seconds)"," Percentage of matched spikes (%)", "time-%"], ["Learning time", "Time (seconds)"," Similarity score of matched spikes (%)", "time-simscore"]]
+    for i, block in enumerate(blocks, start=0):
         df = parse_table_block(block, sep=args.sep)
-        plot_table(df, title=f"Table {i}", duration=args.duration)
+        plot_table(df, title=titles[i][0], xtitle=titles[i][1], ytitle=titles[i][2], duration=args.duration, name=titles[i][3])
 
 
 if __name__ == "__main__":
