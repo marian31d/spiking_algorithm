@@ -347,6 +347,7 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
     # spike properties
     spike_times = st[:,0].astype('int64') + imin  # shift by minimum sample index
     spike_templates = st[:,1].astype('int32')
+    spike_scores = st[:,2].astype('float32')  # matched-filter score of assigned template
     spike_clusters = clu
     xs, ys = compute_spike_positions(st, tF, ops)
     spike_positions = np.vstack([xs, ys]).T
@@ -361,10 +362,12 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
     amp = amplitudes[kept_spikes]
     spike_templates = spike_templates[kept_spikes]
     spike_positions = spike_positions[kept_spikes]
+    spike_scores = spike_scores[kept_spikes]
     np.save((results_dir / 'spike_times.npy'), spike_times)
     np.save((results_dir / 'spike_templates.npy'), spike_clusters)
     np.save((results_dir / 'spike_clusters.npy'), spike_clusters)
     np.save((results_dir / 'spike_positions.npy'), spike_positions)
+    np.save((results_dir / 'template_scores.npy'), spike_scores)
     np.save((results_dir / 'spike_detection_templates.npy'), spike_templates)
     np.save((results_dir / 'amplitudes.npy'), amp)
     # Save spike mask so that it can be applied to other variables if needed
@@ -989,7 +992,7 @@ class BinaryFiltered(BinaryRWFile):
 
         # --- store Butterworth coefficients for causal filtering ---
         from scipy.signal import butter
-        self.b, self.a = butter(3, 300, fs=self.fs, btype='high')
+        self.b, self.a = butter(2, 300, fs=self.fs, btype='high')
 
     def filter(self, X, ops=None, ibatch=None, skip_preproc=False):
         # pick only the channels specified in the chanMap
