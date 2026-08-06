@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import json
 import os
+from pathlib import Path
 from scipy import signal
 from scipy.signal import butter, filtfilt
 from kilosort.template_matching import prepare_matching
@@ -123,10 +124,35 @@ def group_templates(indices, probe):
     groups_np = np.array(groups)
     return groups_np
 
+def th_per_temp(result_dir):
+    """
+    Returns an array of the 5 percintile score for each template
+    """
+    result_dir = Path(result_dir)
+    spike_clusters = np.load(result_dir / 'spike_clusters.npy')
+    scores_path = result_dir / 'template_scores.npy'
+    if not scores_path.exists():
+        raise FileNotFoundError(
+            f"{scores_path} not found. This file is written by the patched "
+            "`io.save_to_phy`, so results sorted before that change won't "
+            "have it -- re-run kilosort on this dataset first."
+            )
+    scores = np.load(scores_path)
+    n_templates = spike_clusters.max() + 1
+    p5_by_template = np.full(n_templates, np.nan)
+
+    for cl in np.unique(spike_clusters):
+        mask = spike_clusters == cl
+        cs = scores[mask]
+        p5_by_template[cl] = np.percentile(cs, 5)
+
+    return p5_by_template
+
+
 
 def main():
     # --- 1. Set your directory ---
-    export_dir = "/data/results/mP79_res/IIR/time/3600/"
+    export_dir = "/data/results/mP79_res/IIR/time/3600/1peel/2ndOrd-filt"
     result_dir = "/data/spiking_algorithm/mp79"
     num_shanks = 8  # Set this according to your probe geometry
     
@@ -138,7 +164,7 @@ def main():
     Wall_np = np.load(os.path.join(export_dir, "Wall.npy"))
     Wall_h = os.path.join(result_dir, "Wall.h")
     Wall_masked_np = mask_Wall(Wall_np, ops)
-    #write_c_float_header(Wall_masked_np, "Wall", Wall_h)
+    write_c_float_header(Wall_masked_np, "Wall", Wall_h)
 
     # --- 4. Export nm[] — one scalar per template ---
     Wall_nm_masked = (Wall_masked_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
@@ -199,6 +225,13 @@ def main():
     print(np.unique(groups_np, axis=0).shape[0], "groups;", np.bincount(groups_np).sum(), "assigned")
     template_groups_h = os.path.join(result_dir, "spatial_template_groups.h")
     write_c_float_header(groups_np, "spatial_template_groups", template_groups_h) """
+
+    # --- 11. Get per template threshold
+    thresholds = th_per_temp(export_dir)
+    th_h = os.path.join(result_dir, "TH.h")
+    write_c_float_header(thresholds, "TH", th_h)
+
+
 
 if __name__ == "__main__":
     main()
