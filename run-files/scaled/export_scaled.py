@@ -1,8 +1,11 @@
 import numpy as np
 import torch
+import json
 import os
+from pathlib import Path
 from scipy import signal
 from scipy.signal import butter, filtfilt
+from kilosort.template_matching import prepare_matching
 
 # scaling factors for fixed point representation in C
 Q15 = 2**15
@@ -89,37 +92,114 @@ def get_iir_weights(result_dir):
         f.write(c_header_content)
     
     print(f"Successfully generated {iir_path} as an array.")
+
+def mask_Wall(Wall, ops, nC=None):
+    """
+    Wall: (K, NCHAN, NPCS)  e.g. (173, 126, 3)
+    Keeps each template's nC nearest channels (by probe geometry around the
+    template's peak channel), zeros all others. Returns masked Wall + nm.
+    """
+    K, NCHAN, NPCS = Wall.shape
+
+    xc = np.asarray(ops['xc'], dtype=np.float64)
+    yc = np.asarray(ops['yc'], dtype=np.float64)
+    assert xc.shape[0] == NCHAN, f"xc has {xc.shape[0]} chans, Wall has {NCHAN}"
+
+    if nC is None:
+        nC = int(ops['settings']['nearest_chans'])   # KS default ~10
+
+    # peak channel per template = channel carrying the most energy
+    energy = (Wall**2).sum(axis=2)        # (K, NCHAN)
+    peak_ch = energy.argmax(axis=1)       # (K,)
+
+    # squared distance between every pair of channels
+    d2 = (xc[:, None] - xc[None, :])**2 + (yc[:, None] - yc[None, :])**2  # (NCHAN, NCHAN)
+
+    Wall_masked = np.zeros_like(Wall)
+    for k in range(K):
+        near = np.argsort(d2[peak_ch[k]])[:nC]    # nC nearest channels to this template's peak
+        Wall_masked[k, near, :] = Wall[k, near, :]
+
+    kept = (np.abs(Wall_masked).sum(axis=2) > 0).sum(axis=1)  # channels kept per template
+    print(f"[MASK] nearest_chans={nC}; kept per template: "
+          f"min={kept.min()} max={kept.max()} (NCHAN={NCHAN})")
+    return Wall_masked
+
+def group_templates(indices, probe):
+    """
+    Group templates by spatial position according to probe shanks.
+    Loads probe and check kcoords in it to group templates by location.
+    """
+    kcoord = np.array(probe['kcoords'])
+    nchan = probe['n_chan']
+    groups = [0] * len(indices) #indix = the id of the group, values = the list of templates
+    for ti in range(len(indices)):
+        t = indices[ti]
+        for j in range(max(kcoord)+1): #search for group id with minimum similar channels/
+            ind = np.where(kcoord==j)[0] #get channels in this group
+            common = len(set(ind) & set(t))
+            if common > 7:
+                groups[ti] = j
+                break
+    groups_np = np.array(groups)
+    return groups_np
+
+def th_per_temp(result_dir):
+    """
+    Returns an array of the 5 percintile score for each template
+    """
+    result_dir = Path(result_dir)
+    spike_clusters = np.load(result_dir / 'spike_clusters.npy')
+    scores_path = result_dir / 'template_scores.npy'
+    if not scores_path.exists():
+        raise FileNotFoundError(
+            f"{scores_path} not found. This file is written by the patched "
+            "`io.save_to_phy`, so results sorted before that change won't "
+            "have it -- re-run kilosort on this dataset first."
+            )
+    scores = np.load(scores_path)
+    n_templates = spike_clusters.max() + 1
+    p5_by_template = np.full(n_templates, np.nan)
+
+    for cl in np.unique(spike_clusters):
+        mask = spike_clusters == cl
+        cs = scores[mask]
+        p5_by_template[cl] = np.percentile(cs, 5)
+
+    return p5_by_template
     
 def main():
     # --- 1. Set your directory ---
-    #
-    export_dir = "/data/results/mds2_res/flows_final_shift/batch-def/offline_3600/export"
-    offline_dir = "/data/results/mds2_res/flows_final_shift/batch-def/offline_3600"
-    result_dir = "/data/results/mS51_res/spiking_algorithm/mds2"
+    export_dir = "/data/results/mP79_res/IIR/time/3600/2peels/2ndOrd-filt"
+    result_dir = "/data/spiking_algorithm/mp79"
+    num_shanks = 8  # Set this according to your probe geometry
+    
+    # --- 2. Load Ops ---
+    ops_path = os.path.join(export_dir, "ops.npy")
+    ops = np.load(ops_path, allow_pickle=True).item()
 
-    # --- 2. Load Wall (Templates) ---
+    # --- 3. Load Wall (Templates) ---
     Wall_np = np.load(os.path.join(export_dir, "Wall.npy"))
     Wall_h = os.path.join(result_dir, "Wall_SCALED.h")
-    write_c_int_header(Wall_np, "Wall_SCALED", Wall_h, Q15, np.int32)
+    Wall_masked_np = mask_Wall(Wall_np, ops)
+    write_c_int_header(Wall_masked_np, "Wall_SCALED", Wall_h, Q15, np.int32)
 
-    # --- 3. Export nm[] — one scalar per template ---
-    #nm = (Wall_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
-    Wall_nm_np = np.load(os.path.join(export_dir, "Wall_nm.npy"))
-    nm_h = os.path.join(result_dir, "Wall_nm.h")
-    write_c_int_header(Wall_nm_np, "Wall_nm", nm_h, None, np.int32)
-
-    # --- 4. Load Ops ---
-    ops_path = os.path.join(offline_dir, "ops.npy")
-    ops = np.load(ops_path, allow_pickle=True).item()
+    # --- 4. Export nm[] — one scalar per template ---
+    Wall_nm_masked = (Wall_masked_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
+    Wall_nm = (Wall_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
+    nm_h = os.path.join(result_dir, "Wall_nm_SCALED.h")
+    write_c_int_header(Wall_nm_masked, "Wall_nm", nm_h, None, np.int32)
 
     # --- 5. Export Th_learned (detection threshold) ---
     Th_learned = float(ops.get("Th_learned", 8.0))
     print(f"Th_learned = {Th_learned}  (compare scores against {Th_learned**2:.2f} in C)")
     
     # --- 6. Load 'wPCA' (PC templates) ---
-    WPCA_np = np.load(os.path.join(export_dir, "wPCA.npy"))
+    wPCA = ops.get('wPCA', None)
+    if wPCA is not None:
+        wPCA = wPCA.detach().cpu().numpy() if torch.is_tensor(wPCA) else wPCA
     WPCA_h = os.path.join(result_dir, "wPCA_SCALED.h")
-    write_c_int_header(WPCA_np, "wPCA_SCALED", WPCA_h, Q15, np.int16)
+    write_c_int_header(wPCA, "wPCA_SCALED", WPCA_h, Q15, np.int16)
 
     # --- 7. Extract and Write Wrot (Whitening Matrix) ---
     Wrot = ops.get("Wrot", None)
@@ -131,22 +211,13 @@ def main():
     else:
         print("Wrot not found in ops.")
 
-    # --- 8. Extract and Write Mul (Drift Shift * whitening) ---
-    Wsh = np.load(os.path.join(export_dir, "Wsh.npy"))
-    if Wsh is not None:
-        if isinstance(Wsh, torch.Tensor):
-            Wsh = Wsh.detach().cpu().numpy()
-        Wsh_h = os.path.join(result_dir, "Wsh_SCALED.h")
-        write_c_int_header(Wsh, "Wsh_SCALED", Wsh_h, Q15, np.int16)
-    else:
-        print("Wsh not found in directory.")
-    # --- 9. Get template cross correlation (ctc) --- 
-    ctc = np.load(os.path.join(export_dir, "ctc.npy"))
-    ctc_h = os.path.join(result_dir, "ctc_SCALED.h")
-    #write_c_int_header(ctc, "ctc", ctc_h, Q30)
+    # --- 8. Get IIR filter weights 
+    get_iir_weights(result_dir) 
 
-    # --- 10. Get IIR filter weights 
-    get_iir_weights(result_dir)
+    # --- 9. Get per template threshold
+    thresholds = th_per_temp(export_dir)
+    th_h = os.path.join(result_dir, "TH.h")
+    write_c_int_header(thresholds, "TH", th_h, None, np.int16)
 
 if __name__ == "__main__":
     main()
