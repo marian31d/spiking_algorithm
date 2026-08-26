@@ -19,37 +19,37 @@
 #define Q15_SHIFT  15
 //#define Q30_SHIFT  30  
 
+// Configuration constants
 #define NCLU 191        //Number of clusters, should be configured on the RAM
 #define NCHAN 124
 #define NCHAN_BIN 136
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
-#define LAG 3
+//Constants 
+#define NT 61
+#define NPCS 3
 #define FS 20000
-#define nt 61
+#define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
+//Algorithm specific constants
+#define LAG 3
+#define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
+#define ENABLE_PEEL_SUBTRACT 1
 #define RB 128       //ring buffer length prev 64
 #define RING_MASK (RB - 1)
-#define NPCS 3
-#define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
-#define BATCH_SIZE 60000
-#define REFRACTORY_SAMPLES 20
-
-#define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
+#define REFRACTORY_SAMPLES 20
 #define WIN_END_OFFSET (NT_TRIG - 1 - PEAK_OFFSET)   // 61-1-20 = 40 
-#define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
-#define ENABLE_PEEL_SUBTRACT 1
-
-// cyclic cache of cf-arrays keyed by absolute window-end time
-#define CC 16
+#define CC 16   // cyclic cache of cf-arrays keyed by absolute window-end time
 #define CC_MASK (CC - 1)
+
 static uint32_t cc_time[CC];
 static int32_t cc_cf[CC][NCLU];
 static int32_t cc_dot[CC][NCLU];     // ADD: cache dot too
 
 //DEBUG
 #define CF_DUMP_N 72000000
-//static int32_t *cf_trace = NULL;     // one win_cf per processed sample
+#define BATCH_SIZE 60000
+
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
@@ -174,15 +174,13 @@ static inline void get_max_score_at_time(SampleBuffer *sample, int32_t head_at, 
     for(int c = 0; c < NCHAN; c++){
         for(int p = 0; p < NPCS; p++){
             int32_t score = 0;
-            #pragma GCC unroll 61
-            for(int s = 0; s < nt; s++){
-                score += (int32_t)wPCA[p * nt + s] * sample->raw_data[(head_at - (NT_TRIG-1-s)) & RING_MASK][c];
+            for(int s = 0; s < NT; s++){
+                score += (int32_t)wPCA[p * NT + s] * sample->raw_data[(head_at - (NT_TRIG-1-s)) & RING_MASK][c];
             }
             pc[c][p] = score >> Q15_SHIFT;
         }
     }
-
-    // 2. Spatial Collapse & Winner Selection - unchanged
+    // 2. Spatial Collapse & Winner Selection
     for(int t = 0; t < NCLU; t++){
         int64_t dot = 0;
         for(int c = 0; c < NCHAN; c++){
@@ -209,7 +207,6 @@ static inline void cf_for(SampleBuffer *sample, int32_t head_at, int32_t T, int3
     *dot_out = cc_dot[s];
 }
 
-// static inline suggests the compiler inline the assembly to avoid call overhead
 // returns 1 and sets *peak_end_head if a magnitude peak is CONFIRMED 3 samples back
 int confirm_peak_evt(SampleBuffer *sample, int32_t *end_center) {
     int32_t h = sample->head;
@@ -235,10 +232,10 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     static int lag_best[NCLU];
 
     int32_t end_center;
-    if (!confirm_peak_evt(sample, &end_center)) return 0;          // stage 1: gate
-    //printf("peak at sample: %d, end_center: %d\n", i, end_center);
-    int32_t T0 = (i >= (int32_t)(LAG + 1)) ? (i - (LAG + 1)) : 0;
-    int32_t base_peak = (i >= (int32_t)(WIN_END_OFFSET + 1 + LAG)) ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0;
+    // stage 1: gate
+    if (!confirm_peak_evt(sample, &end_center)) return 0; 
+    int32_t T0 = (i >= (int32_t)(LAG + 1)) ? (i - (LAG + 1)) : 0; //min end of spike time
+    int32_t base_peak = (i >= (int32_t)(WIN_END_OFFSET + 1 + LAG)) ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0; //min estimated peak time
     
     // stage 2: lag search — recomputed each peel because data changed after subtraction
     for (int t = 0; t < NCLU; t++) {cf_best[t] = -1.0f; }
@@ -270,7 +267,7 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         int32_t peak_t = base_peak + lag_best[t];
         int32_t local_diff = peak_t - last_commit_i[t];
         //int32_t global_diff = peak_t - last_any_commit;
-        if (local_diff < REFRACTORY_SAMPLES) continue;       //maybe useless
+        if (local_diff < REFRACTORY_SAMPLES) continue;
         //if (global_diff < nt && cf_best[t] < last_any_cf) continue; //
         if (lag_best[t] == LAG) continue;
         if (cf_best[t] > best_cf) {
@@ -285,6 +282,7 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
 
     int32_t amp = best_dot / Wall_nm[best_t];          // single multiply: no sqrt, no divide
     uint64_t size = 2*(*data_size);
+    //Record detected spike event if there is space in the results array
     if (*spike_count < size) {
         spike_results[*spike_count].absolute_time = best_peak;
         spike_results[*spike_count].template_id = (uint16_t)best_t;
@@ -299,11 +297,11 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     // WINNING lag, not absolute best_peak. This cancels exactly the matched-filter energy.
     int32_t best_end = (end_center + best_lag) & RING_MASK;
     for (int c = 0; c < NCHAN; c++)
-        for (int ts = 0; ts < nt; ts++) {
+        for (int ts = 0; ts < NT; ts++) {
             int16_t recon = 0.0f;
             for (int p = 0; p < NPCS; p++)
-                recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
-            sample->raw_data[(best_end - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
+                recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*NT + ts];
+            sample->raw_data[(best_end - (NT-1-ts)) & RING_MASK][c] -= recon * amp;
         }
     for (int s = 0; s < CC; s++) cc_time[s] = 0;    // data changed -> invalidate cf/dot cache
 #else
@@ -383,8 +381,6 @@ int main() {
     uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
     fseeko(fptr, (int64_t)byte_offset, SEEK_SET);
     
-    //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
-    //if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
 //120010
     for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
@@ -404,7 +400,7 @@ int main() {
                 fprintf(data_trace, "%u, %f\n", abs_i, sample.raw_data[sample.head][c]);  // debug: dump one template's cf for inspection
             }
         }
-        if (i < (nt - 1)) {continue;}
+        if (i < (NT - 1)) {continue;}
         int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, abs_i, cf_trace);
         if (i % 100000 == 0) {
             printf("Processed %u batches... out of %u\n", i, (uint32_t)(binary_size));

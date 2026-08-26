@@ -22,10 +22,9 @@
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
 //Constants 
-#define nt 61
+#define NT 61
 #define NPCS 3
 #define FS 20000
-#define BATCH_SIZE 60000
 #define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
 //Algorithm specific constants
 #define LAG 3
@@ -41,10 +40,11 @@
 
 static uint32_t cc_time[CC];
 static float cc_cf[CC][NCLU];
-static float cc_dot[CC][NCLU];     // ADD: cache dot too
+static float cc_dot[CC][NCLU];
 
 //DEBUG
 #define CF_DUMP_N 72000000
+#define BATCH_SIZE 60000
 
 /*
 1. need to change the file pointer size, riscv doesn't support 64bit although the compiler can deal with it.
@@ -177,15 +177,15 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
 }
 static inline void score_at(SampleBuffer *sample, int32_t head_at, float *cf_all, float *dot_all) {
     float pc[NCHAN][NPCS];
-    // convolution of whitened data with PCA weights to get the principal components
+    // 1. Temporal Dot Product - walk backwards from ring_head
     for (int c = 0; c < NCHAN; c++)
         for (int p = 0; p < NPCS; p++) {
             float s = 0.0f;
             for (int k = 0; k < NT_TRIG; k++)
-                s += sample->raw_data[(head_at - (NT_TRIG-1-k)) & RING_MASK][c] * wPCA[p*nt + k];
+                s += sample->raw_data[(head_at - (NT_TRIG-1-k)) & RING_MASK][c] * wPCA[p*NT + k];
             pc[c][p] = s;
         }
-    // compute dot products and cf values for each template
+    // 2. Spatial Collapse & Winner Selection
     for (int t = 0; t < NCLU; t++) {
         float dot = 0.0f;
         for (int c = 0; c < NCHAN; c++)
@@ -270,8 +270,8 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
         int32_t peak_t = base_peak + lag_best[t];
         int32_t local_diff = peak_t - last_commit_i[t];
         //int32_t global_diff = peak_t - last_any_commit;
-        if (local_diff < REFRACTORY_SAMPLES) continue;       //maybe useless
-        //if (global_diff < nt && cf_best[t] < last_any_cf) continue; //
+        if (local_diff < REFRACTORY_SAMPLES) continue;
+        //if (global_diff < NT && cf_best[t] < last_any_cf) continue; //
         if (lag_best[t] == LAG) continue;
         if (cf_best[t] > best_cf) {
             best_cf=cf_best[t]; best_dot=dot_best[t]; best_lag=lag_best[t];
@@ -302,11 +302,11 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     // WINNING lag, not absolute best_peak. This cancels exactly the matched-filter energy.
     int32_t best_end = (end_center + best_lag) & RING_MASK;
     for (int c = 0; c < NCHAN; c++)
-        for (int ts = 0; ts < nt; ts++) {
+        for (int ts = 0; ts < NT; ts++) {
             float recon = 0.0f;
             for (int p = 0; p < NPCS; p++)
-                recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*nt + ts];
-            sample->raw_data[(best_end - (nt-1-ts)) & RING_MASK][c] -= recon * amp;
+                recon += Wall[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA[p*NT + ts];
+            sample->raw_data[(best_end - (NT-1-ts)) & RING_MASK][c] -= recon * amp;
         }
     for (int s = 0; s < CC; s++) cc_time[s] = 0;    // data changed -> invalidate cf/dot cache
 #else
@@ -386,7 +386,6 @@ int main() {
     uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
     fseeko(fptr, (int64_t)byte_offset, SEEK_SET);
     
-
 //120010
     for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
@@ -406,7 +405,7 @@ int main() {
                 fprintf(data_trace, "%u, %f\n", abs_i, sample.raw_data[sample.head][c]);  // debug: dump one template's cf for inspection
             }
         }
-        if (i < (nt - 1)) {continue;}
+        if (i < (NT - 1)) {continue;}
         int m_ret = template_match(&sample, spike_results, &num_spikes, &binary_size, 1, abs_i, cf_trace);
         if (i % 100000 == 0) {
             printf("Processed %u batches... out of %u\n", i, (uint32_t)(binary_size));
