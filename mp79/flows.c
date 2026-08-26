@@ -15,39 +15,39 @@
 
 #define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
 
+// Configuration constants
 #define NCLU 191        //Number of clusters, should be configured on the RAM
 #define NCHAN 124
 #define NCHAN_BIN 136
 #define TH_LEARNED_SQ 64.00    //check if it's constant
 
-#define LAG 3
-#define FS 20000
+//Constants 
 #define nt 61
+#define NPCS 3
+#define FS 20000
+#define BATCH_SIZE 60000
+#define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
+//Algorithm specific constants
+#define LAG 3
+#define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
+#define ENABLE_PEEL_SUBTRACT 1
 #define RB 128       //ring buffer length prev 64
 #define RING_MASK (RB - 1)
-#define NPCS 3
-#define MAX_PEELS 1 //matching pursuit iteration number, if disabled set to 1
-#define BATCH_SIZE 60000
-#define REFRACTORY_SAMPLES 20
-
-#define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
 #define PEAK_OFFSET 20           // nt0min: peak sits 20 samples into the template
+#define REFRACTORY_SAMPLES 20
 #define WIN_END_OFFSET (NT_TRIG - 1 - PEAK_OFFSET)   // 61-1-20 = 40 
-#define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
-#define ENABLE_PEEL_SUBTRACT 1
-
-// cyclic cache of cf-arrays keyed by absolute window-end time
-#define CC 16
+#define CC 16   // cyclic cache of cf-arrays keyed by absolute window-end time
 #define CC_MASK (CC - 1)
+
 static uint32_t cc_time[CC];
 static float cc_cf[CC][NCLU];
 static float cc_dot[CC][NCLU];     // ADD: cache dot too
 
 //DEBUG
 #define CF_DUMP_N 72000000
-//static float *cf_trace = NULL;     // one win_cf per processed sample
+
 /*
-1. need to change the file pointer size, riscv doesn't support 64bit altho the compiler can deal with it.
+1. need to change the file pointer size, riscv doesn't support 64bit although the compiler can deal with it.
 2. change the implementation of filtering the unused channel to better fit the Soc.
 3. storing the batch should be done by linker or memory specific storing.
 4. check if the mean variables needs 32 or 64 bits
@@ -177,6 +177,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
 }
 static inline void score_at(SampleBuffer *sample, int32_t head_at, float *cf_all, float *dot_all) {
     float pc[NCHAN][NPCS];
+    // convolution of whitened data with PCA weights to get the principal components
     for (int c = 0; c < NCHAN; c++)
         for (int p = 0; p < NPCS; p++) {
             float s = 0.0f;
@@ -184,6 +185,7 @@ static inline void score_at(SampleBuffer *sample, int32_t head_at, float *cf_all
                 s += sample->raw_data[(head_at - (NT_TRIG-1-k)) & RING_MASK][c] * wPCA[p*nt + k];
             pc[c][p] = s;
         }
+    // compute dot products and cf values for each template
     for (int t = 0; t < NCLU; t++) {
         float dot = 0.0f;
         for (int c = 0; c < NCHAN; c++)
@@ -206,7 +208,7 @@ static inline void cf_for(SampleBuffer *sample, int32_t head_at, int32_t T, floa
     *dot_out = cc_dot[s];
 }
 
-// static inline suggests the compiler inline the assembly to avoid call overhead
+
 // returns 1 and sets *peak_end_head if a magnitude peak is CONFIRMED 3 samples back
 int confirm_peak_evt(SampleBuffer *sample, int32_t *end_center) {
     int32_t h = sample->head;
@@ -226,16 +228,17 @@ int confirm_peak_evt(SampleBuffer *sample, int32_t *end_center) {
     return 0;
 }
 
+//The code of the code - template matching and spike detection
 int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
                    uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i, FILE *cf_trace) {
     static float cf_best[NCLU], dot_best[NCLU];
     static int lag_best[NCLU];
 
     int32_t end_center;
-    if (!confirm_peak_evt(sample, &end_center)) return 0;          // stage 1: gate
-    //printf("peak at sample: %d, end_center: %d\n", i, end_center);
-    int32_t T0 = (i >= (int32_t)(LAG + 1)) ? (i - (LAG + 1)) : 0;
-    int32_t base_peak = (i >= (int32_t)(WIN_END_OFFSET + 1 + LAG)) ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0;
+    // stage 1: gate
+    if (!confirm_peak_evt(sample, &end_center)) return 0;
+    int32_t T0 = (i >= (int32_t)(LAG + 1)) ? (i - (LAG + 1)) : 0; //min end of spike time
+    int32_t base_peak = (i >= (int32_t)(WIN_END_OFFSET + 1 + LAG)) ? (i - (WIN_END_OFFSET + 1 + LAG)) : 0; //min estimated peak time
     
     // stage 2: lag search — recomputed each peel because data changed after subtraction
     for (int t = 0; t < NCLU; t++) {cf_best[t] = -1.0f; }
@@ -280,8 +283,9 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     }
     if (best_t < 0) return 0;                       // nothing eligible left at this location
 
-    float amp = best_dot / Wall_nm[best_t];          // single multiply: no sqrt, no divide
+    float amp = best_dot / Wall_nm[best_t];
     uint64_t size = 2*(*data_size);
+    //Record detected spike event if there is space in the results array
     if (*spike_count < size) {
         spike_results[*spike_count].absolute_time = best_peak;
         spike_results[*spike_count].template_id = (uint16_t)best_t;
@@ -382,8 +386,7 @@ int main() {
     uint64_t byte_offset = start_sample * NCHAN_BIN * sizeof(int16_t);
     fseeko(fptr, (int64_t)byte_offset, SEEK_SET);
     
-    //cf_trace = calloc(CF_DUMP_N, sizeof(float));     // calloc zeroes the warmup gap
-    //if (!cf_trace) { fprintf(stderr, "cf_trace alloc failed\n"); return -1; }
+
 //120010
     for (uint32_t i = 0; i < binary_size; i++) {
         uint32_t abs_i = i + (uint32_t)start_sample;  // true absolute sample index
@@ -414,13 +417,11 @@ int main() {
     
     printf("Processing complete. Detected %u spikes.\nSaving results in Kilosort format...\n", num_spikes);
     
-    
     // 1. Allocate flat arrays for Kilosort output types
     // Note: Kilosort prefers int64 for time, int32 for templates, and float64 for amplitudes
     int64_t *spike_times    = (int64_t *)malloc(num_spikes * sizeof(int64_t));
     int32_t *spike_templates = (int32_t *)malloc(num_spikes * sizeof(int32_t));
     double  *amplitudes     = (double *)malloc(num_spikes * sizeof(double));
-
 
     if (!spike_times || !spike_templates || !amplitudes) {
         fprintf(stderr, "Memory allocation failed for output arrays.\n");
