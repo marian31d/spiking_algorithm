@@ -170,7 +170,7 @@ def th_per_temp(result_dir):
     
 def main():
     # --- 1. Set your directory ---
-    export_dir = "/data/results/mP79_res/IIR/time/3600/2peels/2ndOrd-filt"
+    export_dir = "/data/results/mP79_res/IIR/time/3600/2ndOrd-filt"
     result_dir = "/data/spiking_algorithm/mp79"
     num_shanks = 8  # Set this according to your probe geometry
     
@@ -188,7 +188,7 @@ def main():
     Wall_nm_masked = (Wall_masked_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
     Wall_nm = (Wall_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
     nm_h = os.path.join(result_dir, "Wall_nm_SCALED.h")
-    write_c_int_header(Wall_nm_masked, "Wall_nm", nm_h, None, np.int32)
+    write_c_int_header(Wall_nm_masked, "Wall_nm_SCALED", nm_h, None, np.int32)
 
     # --- 5. Export Th_learned (detection threshold) ---
     Th_learned = float(ops.get("Th_learned", 8.0))
@@ -216,8 +216,8 @@ def main():
 
     # --- 9. Get per template threshold
     thresholds = th_per_temp(export_dir)
-    th_h = os.path.join(result_dir, "TH.h")
-    write_c_int_header(thresholds, "TH", th_h, None, np.int16)
+    th_h = os.path.join(result_dir, "TH_SCALED.h")
+    write_c_int_header(thresholds, "TH_SCALED", th_h, None, np.int16)
 
 if __name__ == "__main__":
     main()

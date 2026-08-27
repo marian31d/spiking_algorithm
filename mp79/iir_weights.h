@@ -10,12 +10,12 @@
     // Biquad Coefficient Array
     // Index map: [0]=b0, [1]=b1, [2]=b2, [3]=a1, [4]=a2
     // Note: a0 is mathematically always 1.0, so it is omitted.
-    const float iir_weights[5] = {
-        0.93552671f, 
-        -1.87105341f, 
-        0.93552671f, 
-        -1.86689228f, 
-        0.87521455f
+    const int16_t iir_weights[5] = {
+        30655, 
+        4226, 
+        30655, 
+        4362, 
+        28679
     };
     
     #endif // IIR_WEIGHTS_H
