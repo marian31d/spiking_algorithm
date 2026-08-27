@@ -228,7 +228,7 @@ int confirm_peak_evt(SampleBuffer *sample, int32_t *end_center) {
     return 0;
 }
 
-//The code of the code - template matching and spike detection
+//The core of the code - template matching and spike detection
 int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
                    uint32_t *spike_count, uint32_t *data_size, int match, uint32_t i, FILE *cf_trace) {
     static float cf_best[NCLU], dot_best[NCLU];
