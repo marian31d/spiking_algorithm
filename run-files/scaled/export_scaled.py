@@ -1,3 +1,5 @@
+from fileinput import filename
+
 import numpy as np
 import torch
 import json
@@ -48,7 +50,9 @@ def write_c_int_header(array_data, array_name, filename, scale_factor=None, type
                 f.write("\n")      
         f.write("\n};\n\n")
         f.write(f"#endif // {array_name.upper()}_H\n")  
-    print(f"Generated {filename} ({len(flat_data)} elements as {ctype_str}).")
+    print(f"Generated {filename} ({len(flat_data)} elements as {ctype_str}), size of: {flat_data.nbytes} bytes.")
+    print(array_name, "max: ", np.max(array_data), "min: ", np.min(array_data), "type: ", array_data.dtype, "dimensions: ", array_data.shape)
+
 
 def get_iir_weights(result_dir):
     # --- Filter Specifications ---

@@ -12,7 +12,6 @@ from kilosort.template_matching import prepare_matching
 def write_c_float_header(array_data, array_name, filename):
     """Flattens a numpy array and writes it as a C float header file."""
     flat_data = array_data.flatten()
-
     with open(filename, "w") as f:
         f.write(f"#ifndef {array_name.upper()}_H\n")
         f.write(f"#define {array_name.upper()}_H\n\n")
@@ -30,7 +29,8 @@ def write_c_float_header(array_data, array_name, filename):
         f.write("\n};\n\n")
         f.write(f"#endif // {array_name.upper()}_H\n")
         
-    print(f"Generated {filename} ({len(flat_data)} elements as floats)")
+    print(f"Generated {filename} ({len(flat_data)} elements as floats), size of: {flat_data.nbytes} bytes.")    
+    print(array_name, "max: ", np.max(array_data), "min: ", np.min(array_data), "type: ", array_data.dtype, "dimensions: ", array_data.shape)
 
 def get_iir_weights(result_dir):
     # --- Filter Specifications ---
@@ -40,7 +40,7 @@ def get_iir_weights(result_dir):
     
     # Generate IIR Butterworth coefficients
     b, a = signal.butter(order, fc, btype='highpass', fs=fs)
-    
+    print("IIR Weights", "max: ", np.max(np.concatenate([a, b])), "min: ", np.min(np.concatenate([a, b])))
     # --- Format the C Header File ---
     # Note: We use {{ and }} to escape literal curly braces in Python f-strings
     c_header_content = f"""// Auto-generated IIR Biquad Coefficients
@@ -71,7 +71,7 @@ def get_iir_weights(result_dir):
     with open(iir_path, "w") as f:
         f.write(c_header_content)
     
-    print(f"Successfully generated {iir_path} as an array.")
+    print(f"Successfully generated {iir_path} as an array. Size of: {np.array(a).nbytes + np.array(b).nbytes} bytes.")
 
 def mask_Wall(Wall, ops, nC=None):
     """
@@ -152,7 +152,7 @@ def th_per_temp(result_dir):
 
 def main():
     # --- 1. Set your directory ---
-    export_dir = "/data/results/mP79_res/IIR/time/3600/1peel/2ndOrd-filt"
+    export_dir = "/data/results/mP79_res/IIR/time/3600/2peels/2ndOrd-filt"
     result_dir = "/data/spiking_algorithm/mp79"
     num_shanks = 8  # Set this according to your probe geometry
     
@@ -215,7 +215,7 @@ def main():
     get_iir_weights(result_dir)
 
     # --- 10. Get template groups according to locations
-    # Outputs an array such that the index is the templates id and the value is the group number according to location.
+    # Outputs an array such that the index is the template's id and the value is the group number according to location.
     """ indices_path = os.path.join(export_dir, "pc_feature_ind.npy")
     probe_path = os.path.join(result_dir, "probe_mp79.json")  #change probe name
     with open(probe_path, 'r') as f:     #change probe name

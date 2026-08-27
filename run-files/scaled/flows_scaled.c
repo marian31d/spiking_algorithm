@@ -167,7 +167,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
 }
 
 // static inline suggests the compiler inline the assembly to avoid call overhead
-static inline void get_max_score_at_time(SampleBuffer *sample, int32_t head_at, int32_t *cf_all, int32_t *dot_all) {
+static inline void score_at(SampleBuffer *sample, int32_t head_at, int32_t *cf_all, int32_t *dot_all) {
     int32_t pc[NCHAN][NPCS];
 
     // 1. Temporal Dot Product - walk backwards from ring_head
