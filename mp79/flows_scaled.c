@@ -19,7 +19,7 @@
 //#define Q30_SHIFT  30  
 
 // Configuration constants
-#define NCLU 191        //Number of clusters, should be configured on the RAM
+#define NCLU 187        //Number of clusters, should be configured on the RAM
 #define NCHAN 124
 #define NCHAN_BIN 136
 #define TH_LEARNED_SQ 64.00    //check if it's constant
@@ -166,7 +166,7 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
 }
 
 // static inline suggests the compiler inline the assembly to avoid call overhead
-static inline void get_max_score_at_time(SampleBuffer *sample, int32_t head_at, int32_t *cf_all, int32_t *dot_all) {
+static inline void score_at(SampleBuffer *sample, int32_t head_at, int32_t *cf_all, int32_t *dot_all) {
     int32_t pc[NCHAN][NPCS];
 
     // 1. Temporal Dot Product - walk backwards from ring_head
@@ -350,11 +350,11 @@ void save_npy(const char* filename, void* data, size_t num_elements, size_t elem
 
 int main() {
     char filename[] = "/data/mP79/dat/mP79_17/mP79_17.dat";
-    char results_dir[] = "/data/results/mP79_res/flows_c/2peels/V3.5/";
+    char results_dir[] = "/data/results/mP79_res/flows_c/2peels/V3.5/scaled/";
 
     /////////////////////DEBUG/////////////////////////
-    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/2peels/V3.5/cf_trace.txt", "w");
-    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/2peels/V3.5/data_trace.txt", "w");
+    FILE *cf_trace = fopen("/data/results/mP79_res/flows_c/2peels/V3.5/scaled/cf_trace.txt", "w");
+    FILE *data_trace = fopen("/data/results/mP79_res/flows_c/2peels/V3.5/scaled/data_trace.txt", "w");
 
     printf("Reading data from %s...\n", filename);
     FILE *fptr = fopen(filename, "rb");
@@ -396,7 +396,7 @@ int main() {
         // DEBUG: export last 100 preprocessed samples
         if (abs_i >= CF_DUMP_N && abs_i <= CF_DUMP_N + 14000u) {
             for (int c = 0; c < NCHAN; c++) {
-                fprintf(data_trace, "%u, %f\n", abs_i, sample.raw_data[sample.head][c]);  // debug: dump one template's cf for inspection
+                fprintf(data_trace, "%u, %d\n", abs_i, sample.raw_data[sample.head][c]);  // debug: dump one template's cf for inspection
             }
         }
         if (i < (NT - 1)) {continue;}
@@ -450,3 +450,4 @@ int main() {
 
     printf("Done!\n");
     return 0;
+}
