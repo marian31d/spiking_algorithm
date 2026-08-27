@@ -16,7 +16,7 @@
 #define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
 
 // Configuration constants
-#define NCLU 191        //Number of clusters, should be configured on the RAM
+#define NCLU 187        //Number of clusters, should be configured on the RAM
 #define NCHAN 124
 #define NCHAN_BIN 136
 #define TH_LEARNED_SQ 64.00    //check if it's constant
