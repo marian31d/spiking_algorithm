@@ -226,7 +226,8 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
         Cf[:, :nt] = 0
         Cf[:, -nt:] = 0
 
-        Cfmax, imax = torch.max(Cf, 0)
+        Cfmax, imax = torch.max(Cf, 0) 
+        #slides a window of width 2*nt+1 along the length axis and outputs the max inside each window
         Cmax  = max_pool1d(Cfmax.unsqueeze(0).unsqueeze(0), (2*nt+1), stride=1, padding=(nt))
 
         #print(Cfmax.shape)
