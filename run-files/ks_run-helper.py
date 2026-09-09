@@ -18,7 +18,7 @@ class data:
 #parameters for dataset
 ms51 = data("/data/mS51/dat/mS51_49/mS51_49.dat", \
 		"/home/mariandawud/kilosort/ms51/probe_ms51.json", \
-		'/data/results/mS51_res/IIR/ms51-det-3pc-2peels-IIR-28.6/ops.npy', \
+		'/data/results/mS51_res/IIR/ms51-det-3pc-IIR-28.6/ops.npy', \
 		'/data/results/mS51_res/IIR/', \
 		[300, 900, 1800, 2400, 3600, 5400, 10800, 14400, 20400],
 		[i for i in range(15,126)])
@@ -56,7 +56,7 @@ def one_run(d, p):
 	settings['probe_path'] = d.PROBE
 	probe = None		#ref['probe']
 
-	results_dir = Path(d.RES_BASE) / "det-3pc-31.8" / f"{p}" #/ "2ndOrd-filt"
+	results_dir = Path(d.RES_BASE) / "1shank-3ordf" #/ f"{p}" / "2ndOrd-filt"
 	if (results_dir / "ops.npy").exists():
 		print(f"[skip] {results_dir}", flush=True); return
 	results_dir.mkdir(parents=True, exist_ok=True)
@@ -68,11 +68,13 @@ def one_run(d, p):
 					invert_sign=ref.get('invert_sign', False),
 					save_preprocessed_copy=ref.get('save_preprocessed_copy', False), bad_channels=d.EXCLUDECHANS)
 
-l=[1, 2]
+l=[1]
 if __name__ == "__main__":
 	ctx = mp.get_context("spawn")     # fresh interpreter + CUDA context per job
 	failed = []
-	for d in data_l[0]:
+	for d in data_l:
+		if d!=ms51:
+			break
 		for p in l:
 			#print(f"=== freeze-sec={p} dataset={d.BIN} ===", flush=True)
 			proc = ctx.Process(target=one_run, args=(d, p))
