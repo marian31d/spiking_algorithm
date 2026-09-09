@@ -63,13 +63,13 @@ def main():
     print("Th_learned:", ops.get("Th_learned"))
     print("tmin:", ops.get("tmin"))
     print("tmax:", ops.get("tmax"))
-    print("iCC:", ops.get("iCC").shape)
     print("batch_size:", ops.get("batch_size"))
     print("Wrot", "max: ", np.max(ops.get("Wrot")), "min: ", np.min(ops.get("Wrot")), "type: ", ops.get("Wrot").dtype, "dimensions: ", ops.get("Wrot").shape)
     print("dshift:", "max: ", np.max(ops.get("dshift")), "min: ", np.min(ops.get("dshift")), "type: ", ops.get("dshift").dtype, "dimensions: ", ops.get("dshift").shape)
     print("max_peels:", ops["max_peels"])
     print("nearest_chans", ops.get("nearest_chans"))
-    print("wPCA", ops.get("wPCA"))
+    print("wPCA", "max: ", np.max(ops.get("wPCA")), "min: ", np.min(ops.get("wPCA")), "type: ", ops.get("wPCA").dtype, "dimensions: ", ops.get("wPCA").shape)
+    
     print(ops['probe'])
 
 if __name__ == "__main__":
