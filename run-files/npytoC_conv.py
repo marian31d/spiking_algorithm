@@ -56,10 +56,10 @@ def get_iir_weights(result_dir):
     // Index map: [0]=b0, [1]=b1, [2]=b2, [3]=a1, [4]=a2
     // Note: a0 is mathematically always 1.0, so it is omitted.
     const float iir_weights[5] = {{
-        {b[0]:.8f}f, 
-        {b[1]:.8f}f, 
-        {b[2]:.8f}f, 
-        {a[1]:.8f}f, 
+        {b[0]:.8f}f,
+        {b[1]:.8f}f,
+        {b[2]:.8f}f,
+        {a[1]:.8f}f,
         {a[2]:.8f}f
     }};
     
@@ -152,10 +152,10 @@ def th_per_temp(result_dir):
 
 def main():
     # --- 1. Set your directory ---
-    export_dir = "/data/results/mP79_res/IIR/time/3600/2peels/2ndOrd-filt"
+    export_dir = "/data/results/mP79_res/IIR/time/3600/2ndOrd-filt"
     result_dir = "/data/spiking_algorithm/mp79"
     num_shanks = 8  # Set this according to your probe geometry
-    
+
     # --- 2. Load Ops ---
     ops_path = os.path.join(export_dir, "ops.npy")
     ops = np.load(ops_path, allow_pickle=True).item()
