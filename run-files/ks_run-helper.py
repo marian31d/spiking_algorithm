@@ -7,40 +7,40 @@ from kilosort.parameters import DEFAULT_SETTINGS
 
 
 class data:
-	def __init__(self, BIN, PROBE, REF, RES_BASE, PARAMS, CHANS):
+	def __init__(self, BIN, PROBE, REF, RES_BASE, PARAMS, SHANKIDX):
 		self.BIN = BIN
 		self.PROBE=PROBE
 		self.REF=REF
 		self.RES_BASE=RES_BASE
 		self.PARAMS = PARAMS
-		self.EXCLUDECHANS = CHANS
+		self.SHANKIDX = SHANKIDX
 
 #parameters for dataset
 ms51 = data("/data/mS51/dat/mS51_49/mS51_49.dat", \
 		"/home/mariandawud/kilosort/ms51/probe_ms51.json", \
-		'/data/results/mS51_res/IIR/ms51-det-3pc-IIR-28.6/ops.npy', \
-		'/data/results/mS51_res/IIR/', \
+		'/data/results/mS51_res/IIR/ms51-det-3pc-IIR-gui-9.9/ops.npy', \
+		'/data/results/mS51_res/IIR/matching_pursuit', \
 		[300, 900, 1800, 2400, 3600, 5400, 10800, 14400, 20400],
-		[i for i in range(15,126)])
+		[5])
 
 mp79 = data("/data/mP79/dat/mP79_17/mP79_17.dat", \
 		"/home/mariandawud/kilosort/mp79/probe_mp79.json", \
-		'/data/results/mP79_res/IIR/mp79-det-3pc-2peels-IIR-28.6/ops.npy', \
-		'/data/results/mP79_res/IIR/', \
+		'/data/results/mP79_res/IIR/mp79-det-3pc-IIR-gui-9.9/ops.npy', \
+		'/data/results/mP79_res/IIR/matching_pursuit', \
 		[300, 900, 1800, 2400, 3600, 5400, 10800, 12600],
-		[i for i in range(10,126)])
+		[1])
 
 mds2 = data("/data/mDS2/dat/mDS2_02/mDS2_02.dat", \
 		"/home/mariandawud/kilosort/mds2/probe_mds2.json", \
-		'/data/results/mds2_res/IIR/mds2-det-3pc-2peels-IIR-29.6/ops.npy', \
-		'/data/results/mds2_res/IIR/', \
+		'/data/results/mds2_res/IIR/mds2-det-3pc-IIR-gui-9.9/ops.npy', \
+		'/data/results/mds2_res/IIR/matching_pursuit', \
 		[300, 900, 1800, 3600, 2400, 5400, 10800, 13800],
-		[i for i in range(16,62)])
+		[3])
 
 data_l = [ms51, mp79, mds2]
 
 #defining the iterations parameter 
-peels = [7, 10, 20, 50, 70, 90, 100]
+peels = [1, 2, 4, 7, 10, 20, 50, 70, 90, 100]
 
 
 def one_run(d, p):
@@ -52,11 +52,11 @@ def one_run(d, p):
 
 	#settings['nblocks'] = 0 # for no drift correction 
 	#settings['freeze_sec'] = p
-	#settings['max_peels'] = 2
-	settings['probe_path'] = d.PROBE
-	probe = None		#ref['probe']
+	settings['max_peels'] = p
+	#settings['probe_path'] = d.PROBE
+	probe = ref['probe']
 
-	results_dir = Path(d.RES_BASE) / "1shank-3ordf" #/ f"{p}" / "2ndOrd-filt"
+	results_dir = Path(d.RES_BASE) / "pershank-2ordf" / f"{p}" #/ "2ndOrd-filt"
 	if (results_dir / "ops.npy").exists():
 		print(f"[skip] {results_dir}", flush=True); return
 	results_dir.mkdir(parents=True, exist_ok=True)
@@ -66,16 +66,14 @@ def one_run(d, p):
 					data_dtype=ref.get('data_dtype', 'int16'),
 					do_CAR=ref.get('do_CAR', True),
 					invert_sign=ref.get('invert_sign', False),
-					save_preprocessed_copy=ref.get('save_preprocessed_copy', False), bad_channels=d.EXCLUDECHANS)
+					save_preprocessed_copy=ref.get('save_preprocessed_copy', False), shank_idx=d.SHANKIDX)
 
 l=[1]
 if __name__ == "__main__":
 	ctx = mp.get_context("spawn")     # fresh interpreter + CUDA context per job
 	failed = []
 	for d in data_l:
-		if d!=ms51:
-			break
-		for p in l:
+		for p in peels:
 			#print(f"=== freeze-sec={p} dataset={d.BIN} ===", flush=True)
 			proc = ctx.Process(target=one_run, args=(d, p))
 			proc.start()
