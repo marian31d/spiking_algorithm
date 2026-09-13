@@ -12,11 +12,11 @@
 #include "wPCA_SCALED.h"
 #include "TH_SCALED.h"
 
-#define RELU(x) ((x) > 0.0f ? (x) : 0.0f) //check if good for bare metal
+#define RELU(x) ((x) > 0 ? (x) : 0) //check if good for bare metal
 
 //FLOATING POINT SCALES
 #define Q15_SHIFT  15
-//#define Q30_SHIFT  30  
+#define Q30_SHIFT  30  
 
 // Configuration constants
 #define NCLU 187        //Number of clusters, should be configured on the RAM
@@ -28,7 +28,7 @@
 #define NT 61
 #define NPCS 3
 #define FS 20000
-#define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
+#define V_TH_SCALED 7               // (V_TH*2) magnitude trigger on whitened data — TUNE
 //Algorithm specific constants
 #define LAG 3
 #define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
@@ -213,10 +213,11 @@ int confirm_peak_evt(SampleBuffer *sample, int32_t *end_center) {
     int32_t a = (pk + 1) & RING_MASK;     // after peak
     int32_t b = (pk - 1) & RING_MASK;     // before peak
     for (int c = 0; c < NCHAN; c++) {
-        int16_t vpk = fabsf(sample->raw_data[pk][c]);
-        if (vpk <= V_TH) continue;
-        int16_t va = fabsf(sample->raw_data[a][c]);
-        int16_t vb = fabsf(sample->raw_data[b][c]);
+        int32_t vpk = abs((int32_t)(sample->raw_data[pk][c]))*2;    //v_th IS SCALED SO multiply by 2 to match the threshold
+        if (vpk <= V_TH_SCALED) continue;
+        vpk >>= 1;
+        int16_t va = abs(sample->raw_data[a][c]);
+        int16_t vb = abs(sample->raw_data[b][c]);
         if (vpk >= va && vpk >= vb) {
             *end_center = (pk + WIN_END_OFFSET) & RING_MASK;       // window ends 40 past peak
             return 1;
@@ -248,7 +249,7 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
 
     /////////////////////DEBUG (first peel pass only)/////////////////////
     if ( i >= CF_DUMP_N && i <= CF_DUMP_N + 14000u) {
-        int32_t win_cf = 0.0f; int win_temp = -1;
+        int32_t win_cf = 0; int win_temp = -1;
         for (int t = 0; t < NCLU; t++) if (cf_best[t] > win_cf) { win_cf = cf_best[t]; win_temp = t; }
         for (int t = 0; t < NCLU; t++)
             fprintf(cf_trace, "%u, %d\n", base_peak, cf_best[t]);
@@ -258,11 +259,11 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     //////////////////////////////////////////////////////////////////////
 
     // best eligible template: above threshold AND not refractory (per-template peak time)
-    int best_t = -1; int32_t best_cf = 0.0f, best_dot = 0.0f; int best_lag = 0;
+    int best_t = -1; int32_t best_cf = 0, best_dot = 0; int best_lag = 0;
     int32_t best_peak = base_peak;
     for (int t = 0; t < NCLU; t++) {
         if (cf_best[t] <= TH_LEARNED_SQ) continue;
-        if (cf_best[t] <= TH_SCALED[t]) continue;
+        //if (cf_best[t] <= TH_SCALED[t]) continue;
         int32_t peak_t = base_peak + lag_best[t];
         int32_t local_diff = peak_t - last_commit_i[t];
         //int32_t global_diff = peak_t - last_any_commit;
@@ -297,9 +298,10 @@ int template_match(SampleBuffer *sample, SpikeEvent *spike_results,
     int32_t best_end = (end_center + best_lag) & RING_MASK;
     for (int c = 0; c < NCHAN; c++)
         for (int ts = 0; ts < NT; ts++) {
-            int16_t recon = 0.0f;
+            int32_t recon = 0;
             for (int p = 0; p < NPCS; p++)
                 recon += Wall_SCALED[best_t*(NCHAN*NPCS) + c*NPCS + p] * wPCA_SCALED[p*NT + ts];
+            recon >>= Q30_SHIFT;
             sample->raw_data[(best_end - (NT-1-ts)) & RING_MASK][c] -= recon * amp;
         }
     for (int s = 0; s < CC; s++) cc_time[s] = 0;    // data changed -> invalidate cf/dot cache
