@@ -7,33 +7,53 @@ from pathlib import Path
 from compare_templates_timewindow import match_spike_times_tol, build_overlap
 
 
-def spikes_by_shank(ops, Wall, shank, clu):
+def spikes_by_shank(ops, Wall, shank, clu, times):
     probe = ops.get('probe', None)
     if probe is None:
         print("Warning: probe not found in ops.")
         return None, None
-    chan_shank = (np.array(probe['kcoords']) == shank)   # channels in this shank
     K, NCHAN, NPCS = Wall.shape
     xc = np.asarray(ops['xc'], dtype=np.float64)
     yc = np.asarray(ops['yc'], dtype=np.float64)
     assert xc.shape[0] == NCHAN, f"xc has {xc.shape[0]} chans, Wall has {NCHAN}"
-    nC = int(ops['settings']['nearest_chans'])           # KS default ~10
 
+    # guard: spike_clusters must map to template rows (uncurated KS output)
+    assert clu.max() < K, (
+        f"clu.max()={clu.max()} >= K={K}; spike_clusters don't map to Wall rows "
+        f"(curated/merged sort?). isin filter would be wrong.")
+
+    # peak channel per template (energy argmax; use ptp to match phy exactly)
     energy = (Wall**2).sum(axis=2)        # (K, NCHAN)
     peak_ch = energy.argmax(axis=1)       # (K,)
-    d2 = (xc[:, None] - xc[None, :])**2 + (yc[:, None] - yc[None, :])**2  # (NCHAN, NCHAN)
+    # peak_ch = (Wall.max(axis=2) - Wall.min(axis=2)).argmax(axis=1)  # phy-style ptp
 
-    Wall_masked = np.zeros_like(Wall)
-    for k in range(K):
-        near = np.argsort(d2[peak_ch[k]])[:nC]
-        Wall_masked[k, near, :] = Wall[k, near, :]
+    # assign each template to the shank of its PEAK channel (single-valued)
+    kcoords = np.asarray(probe['kcoords'])
+    peak_shank = kcoords[peak_ch]                          # (K,) shank per template
+    filtered_templates = np.where(peak_shank == shank)[0]
 
-    chan_mask = np.any(Wall_masked != 0, axis=2)         # (K, NCHAN) kept channels per template
-    filtered_templates = np.where(np.any(chan_mask[:, chan_shank], axis=1))[0]
-    filtered_spikes = np.isin(clu, filtered_templates)
+    keep = np.isin(clu, filtered_templates)               # boolean mask over spikes
+    filtered_times = times[keep]
+    filtered_clu   = clu[keep]
     print(f"Shank {shank}: {len(filtered_templates)} templates, "
-          f"{filtered_spikes.sum()} spikes after filtering.")
-    return filtered_spikes, filtered_templates
+          f"{keep.sum()} spikes after filtering.\n")
+    return filtered_times, filtered_clu
+
+def compare_spikes_by_shank(ops, gui_times, gui_clu, shank_times, shank_clu, shank, out_dir, tol=0):
+    gui_n = gui_times.size
+    i_gui, i_shank = match_spike_times_tol(gui_times, shank_times, tol=max(tol, 0))
+    matched = i_gui.size
+    coverage = 100.0 * matched / gui_times.size
+
+    M, _, _ = build_overlap(gui_clu[i_gui], shank_clu[i_shank])
+    row = M.sum(axis=1, keepdims=True).astype(np.float32)  # |g|
+    col = M.sum(axis=0, keepdims=True).astype(np.float32)  # |o|
+    mn = M / np.maximum(np.minimum(row, col), 1.0)         # min_norm matrix
+    best = mn.max(axis=1)                                  # best per GUI cluster
+    w = M.sum(axis=1)                                      # spikes per GUI cluster
+    min_norm = float((best * w).sum() / w.sum()) if w.sum() > 0 else np.nan
+    print(f"Shank {shank}: {matched} matched spikes, coverage={coverage:.2f}%, min_norm={min_norm:.4f}\n")
+    return coverage, min_norm, matched, gui_n
 
 
 def interval_scores(time, ops, gui_times, gui_clu, other_times, other_clu, tol=0):
@@ -69,7 +89,7 @@ def interval_scores(time, ops, gui_times, gui_clu, other_times, other_clu, tol=0
 
         i_gui, i_oth = match_spike_times_tol(gt, ot, tol=max(tol, 0))
         matched[i] = i_gui.size
-        coverage[i] = 100.0 * i_gui.size / gt.size
+        coverage[i] = 100.0 * matched[i] / gt.size
 
         if i_gui.size > 0:
             M, _, _ = build_overlap(gc[i_gui], oc[i_oth])
@@ -144,50 +164,71 @@ def load_sorting(d):
     d = Path(d)
     times = np.load(d / "spike_times.npy").astype(np.int64, copy=False).reshape(-1)
     clu   = np.load(d / "spike_clusters.npy").astype(np.int64, copy=False).reshape(-1)
-    return times, clu
+    Wall  = np.load(d / "Wall.npy").astype(np.float64, copy=False)
+    return times, clu, Wall
 
 
 def main():
     # Parameters
     time = 3600
     tol = 0
+    intervals = False
+    shanks = True
+    compare = False
     out_dir = Path("/data/results/interval_plots")   # where the 3 PNGs go
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # one entry per dataset: gui / base / flow directories
     datasets = {
         "mS51": {
-            "gui":  Path("/data/results/mS51_res/IIR/matching_pursuit/2peels/2ndOrd-filt"),
-            "base": Path("/data/results/mS51_res/IIR/time/20400/2ndOrd-filt"),
-            "flow": Path("/data/results/mS51_res/IIR/time/3600/2ndOrd-filt"),
+            "base":  Path("/data/results/mS51_res/IIR/matching_pursuit/pershank-2ordf/100/shank_5"), #/data/results/mS51_res/IIR/matching_pursuit/2peels/2ndOrd-filt
+            "gui": Path("/data/results/mS51_res/IIR/time/20400/2ndOrd-filt"),
+            "flow": Path("/data/results/mS51_res/IIR/matching_pursuit/pershank-2ordf"),
+            "shank": 5,  # shank to analyze for this dataset
         },
         "mP79": {
-            "gui":  Path("/data/results/mP79_res/IIR/matching_pursuit/2peels/2ndOrd-filt"),
-            "base": Path("/data/results/mP79_res/IIR/time/12600/2ndOrd-filt"),
-            "flow": Path("/data/results/mP79_res/IIR/time/3600/2ndOrd-filt"),
+            "base":  Path("/data/results/mP79_res/IIR/matching_pursuit/2peels/2ndOrd-filt"), #/data/results/mP79_res/IIR/matching_pursuit/pershank-2ordf/100/shank_1
+            "gui": Path("/data/results/mP79_res/IIR/time/12600/2ndOrd-filt"),
+            "flow": Path("/data/results/mP79_res/IIR/matching_pursuit/pershank-2ordf"),
+            "shank": 1,  # shank to analyze for this dataset
         },
         "mDS2": {
-            "gui":  Path("/data/results/mDS2_res/IIR/matching_pursuit/2peels/2ndOrd-filt"),
-            "base": Path("/data/results/mDS2_res/IIR/time/13800/2ndOrd-filt"),
-            "flow": Path("/data/results/mDS2_res/IIR/baseline/2ndOrd-filt"),
+            "base":  Path("/data/results/mds2_res/IIR/matching_pursuit/pershank-2ordf/100/shank_3"), #/data/results/mDS2_res/IIR/matching_pursuit/2peels/2ndOrd-filt
+            "gui": Path("/data/results/mds2_res/IIR/time/13800/2ndOrd-filt"),
+            "flow": Path("/data/results/mds2_res/IIR/matching_pursuit/pershank-2ordf"),
+            "shank": 3,  # shank to analyze for this dataset
         },
     }
 
+    peels = [1, 2, 4, 7, 10, 20, 50, 70, 90]
+
     for name, dirs in datasets.items():
-        print(f"\n=== {name} ===")
-        # ops per dataset (fs / Nbatches / batch_size), taken from that dataset's GUI dir
-        ops = np.load(os.path.join(dirs["gui"], "ops.npy"), allow_pickle=True).item()
+        for peel in peels:
+            gui_dir = dirs["base"]
+            shank_dir = dirs["flow"] / f"{peel}" / f"shank_{dirs['shank']}"
+            # ops per dataset (fs / Nbatches / batch_size), taken from that dataset's GUI dir
+            ops = np.load(os.path.join(gui_dir, "ops.npy"), allow_pickle=True).item()
+            
+            gui_times,  gui_clu,  gui_Wall  = load_sorting(gui_dir)
+            #base_times, base_clu, base_Wall = load_sorting(dirs["base"])
+            flow_times, flow_clu, flow_Wall = load_sorting(shank_dir)
+            print(f"\n=== {name} === peels={peel} === spikes={len(gui_times)} ===\n")
 
-        gui_times,  gui_clu  = load_sorting(dirs["gui"])
-        base_times, base_clu = load_sorting(dirs["base"])
-        flow_times, flow_clu = load_sorting(dirs["flow"])
-
-        compare_spikes_by_interval(
-            time, ops, gui_times, gui_clu,
-            base_times, base_clu, flow_times, flow_clu,
-            out_dir=out_dir, tol=tol, name=name,
-        )
-
+            if intervals:
+                #compare_spikes_by_interval(
+                #    time, ops, gui_times, gui_clu,
+                #    base_times, base_clu, flow_times, flow_clu,
+                #    out_dir=out_dir, tol=tol, name=name,
+                #)
+                continue
+            elif shanks:
+                #print(ops['probe']['kcoords'])
+                spikes_by_shank(ops, gui_Wall, dirs['shank'], gui_clu, gui_times)
+            elif compare:
+                compare_spikes_by_shank(ops, gui_times, gui_clu, flow_times, flow_clu, dirs['shank'], out_dir, tol=0)
+            else:
+                print("No comparison mode selected. Set intervals=True or shanks=True or compare=True.")
+        
 
 if __name__ == "__main__":
     main()
