@@ -9,10 +9,11 @@ from kilosort.template_matching import prepare_matching
 
 # --- Helper Function for C Header Export ---
 
-def write_c_float_header(array_data, array_name, filename):
+def write_c_float_header(array_data, array_name, filename, export_dir):
     """Flattens a numpy array and writes it as a C float header file."""
     flat_data = array_data.flatten()
     with open(filename, "w") as f:
+        f.write(f"// Header file for {export_dir}\n")
         f.write(f"#ifndef {array_name.upper()}_H\n")
         f.write(f"#define {array_name.upper()}_H\n\n")
 
@@ -164,13 +165,13 @@ def main():
     Wall_np = np.load(os.path.join(export_dir, "Wall.npy"))
     Wall_h = os.path.join(result_dir, "Wall.h")
     Wall_masked_np = mask_Wall(Wall_np, ops)
-    write_c_float_header(Wall_masked_np, "Wall", Wall_h)
+    write_c_float_header(Wall_masked_np, "Wall", Wall_h, export_dir)
 
     # --- 4. Export nm[] — one scalar per template ---
     Wall_nm_masked = (Wall_masked_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
     Wall_nm = (Wall_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
     nm_h = os.path.join(result_dir, "Wall_nm.h")
-    write_c_float_header(Wall_nm, "Wall_nm", nm_h)
+    write_c_float_header(Wall_nm, "Wall_nm", nm_h, export_dir)
 
     # --- 5. Export Th_learned (detection threshold) ---
     Th_learned = float(ops.get("Th_learned", 8.0))
@@ -181,7 +182,7 @@ def main():
     if wPCA is not None:
         wPCA = wPCA.detach().cpu().numpy() if torch.is_tensor(wPCA) else wPCA
     wPCA_h = os.path.join(result_dir, "wPCA.h")
-    write_c_float_header(wPCA, "wPCA", wPCA_h)
+    write_c_float_header(wPCA, "wPCA", wPCA_h, export_dir)
 
     # --- 7. Extract and Write Wrot (Whitening Matrix) ---
     Wrot = ops.get("Wrot", None)
@@ -189,7 +190,7 @@ def main():
         if isinstance(Wrot, torch.Tensor):
             Wrot = Wrot.detach().cpu().numpy()
         Wrot_h = os.path.join(result_dir, "Wrot.h")
-        write_c_float_header(Wrot, "Wrot", Wrot_h)
+        write_c_float_header(Wrot, "Wrot", Wrot_h, export_dir)
     else:
         print("Wrot not found in ops.")
 
@@ -199,7 +200,7 @@ def main():
         if isinstance(Wsh, torch.Tensor):
             Wsh = Wsh.detach().cpu().numpy()
         Wsh_h = os.path.join(result_dir, "Wsh.h")
-        write_c_float_header(Wsh, "Wsh", Wsh_h)
+        write_c_float_header(Wsh, "Wsh", Wsh_h, export_dir)
     else:
         print("Wsh not found in directory.")
 
@@ -209,7 +210,7 @@ def main():
     n_batches = Wsh_pb.shape[0]
     print(f"Wsh_per_batch shape: {Wsh_pb.shape} -> {n_batches} batches")
     Wsh_pb_h = os.path.join(result_dir, "Wsh_per_batch.h")
-    write_c_float_header(Wsh_pb.astype(np.float32), "Wsh_per_batch", Wsh_pb_h)
+    write_c_float_header(Wsh_pb.astype(np.float32), "Wsh_per_batch", Wsh_pb_h, export_dir)
     """
     # --- 9. Get IIR filter weights 
     get_iir_weights(result_dir)
@@ -224,12 +225,12 @@ def main():
     groups_np = group_templates(indices, probe)
     print(np.unique(groups_np, axis=0).shape[0], "groups;", np.bincount(groups_np).sum(), "assigned")
     template_groups_h = os.path.join(result_dir, "spatial_template_groups.h")
-    write_c_float_header(groups_np, "spatial_template_groups", template_groups_h) """
+    write_c_float_header(groups_np, "spatial_template_groups", template_groups_h, export_dir) """
 
     # --- 11. Get per template threshold
     thresholds = th_per_temp(export_dir)
     th_h = os.path.join(result_dir, "TH.h")
-    write_c_float_header(thresholds, "TH", th_h)
+    write_c_float_header(thresholds, "TH", th_h, export_dir)
 
 
 

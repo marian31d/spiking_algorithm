@@ -14,7 +14,7 @@ Q15 = 2**15
 Q30 = 2**30
 
 # --- Helper Function for C Header Export ---
-def write_c_int_header(array_data, array_name, filename, scale_factor=None, type_c = np.int32):
+def write_c_int_header(array_data, array_name, filename, export_dir, scale_factor=None, type_c = np.int32):
     """Flattens a numpy array and writes it as a C float header file."""
     if scale_factor == Q15:
         scaled = np.round(array_data * Q15)
@@ -38,6 +38,7 @@ def write_c_int_header(array_data, array_name, filename, scale_factor=None, type
     ctype_str = ctype_map.get(type_c, "int32_t")
 
     with open(filename, "w") as f:
+        f.write(f"// Header file for {export_dir}\n")
         f.write(f"#ifndef {array_name.upper()}_H\n")
         f.write(f"#define {array_name.upper()}_H\n\n")
         f.write(f"#include <stdint.h>\n\n")
@@ -192,7 +193,7 @@ def main():
     Wall_nm_masked = (Wall_masked_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
     Wall_nm = (Wall_np ** 2).sum(axis=-1).sum(axis=-1).astype(np.float32)  # (K,)
     nm_h = os.path.join(result_dir, "Wall_nm_SCALED.h")
-    write_c_int_header(Wall_nm_masked, "Wall_nm_SCALED", nm_h, None, np.int32)
+    write_c_int_header(Wall_nm_masked, "Wall_nm_SCALED", nm_h, export_dir, None, np.int32)
 
     # --- 5. Export Th_learned (detection threshold) ---
     Th_learned = float(ops.get("Th_learned", 8.0))
@@ -203,7 +204,7 @@ def main():
     if wPCA is not None:
         wPCA = wPCA.detach().cpu().numpy() if torch.is_tensor(wPCA) else wPCA
     WPCA_h = os.path.join(result_dir, "wPCA_SCALED.h")
-    write_c_int_header(wPCA, "wPCA_SCALED", WPCA_h, Q15, np.int16)
+    write_c_int_header(wPCA, "wPCA_SCALED", WPCA_h, export_dir, Q15, np.int16)
 
     # --- 7. Extract and Write Wrot (Whitening Matrix) ---
     Wrot = ops.get("Wrot", None)
@@ -211,7 +212,7 @@ def main():
         if isinstance(Wrot, torch.Tensor):
             Wrot = Wrot.detach().cpu().numpy()
         Wrot_h = os.path.join(result_dir, "Wrot_SCALED.h")
-        write_c_int_header(Wrot, "Wrot_SCALED", Wrot_h, Q15, np.int16)
+        write_c_int_header(Wrot, "Wrot_SCALED", Wrot_h, export_dir, Q15, np.int16)
     else:
         print("Wrot not found in ops.")
 
@@ -221,7 +222,7 @@ def main():
     # --- 9. Get per template threshold
     thresholds = th_per_temp(export_dir)
     th_h = os.path.join(result_dir, "TH_SCALED.h")
-    write_c_int_header(thresholds, "TH_SCALED", th_h, None, np.int16)
+    write_c_int_header(thresholds, "TH_SCALED", th_h, export_dir, None, np.int16)
 
 if __name__ == "__main__":
     main()

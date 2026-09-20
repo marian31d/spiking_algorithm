@@ -1,0 +1,75 @@
+======================================================================
+GUI vs FLOW SUMMARY (ALL scores, ALL clusters + GOOD-only)
+======================================================================
+GUI phy:  /data/results/mS51_res/IIR/matching_pursuit/2peels
+FLOW phy: /data/results/mS51_res/IIR/matching_pursuit/2peels/2ndOrd-filt
+tol (samples): 0
+
+Matched spikes: 3489765
+Matched spikes/GUI window spikes: 67.87%
+Unmatched GUI spikes (in window):  1652215  (32.1% of GUI window)
+Unmatched FLOW spikes (in window): 1635164  (31.9% of FLOW window)
+GUI total spikes:  5141980  (in window: 5141980)
+FLOW total spikes: 5124929  (in window: 5124929)
+GUI unique clusters (matched spikes):  224
+FLOW unique clusters (matched spikes): 222
+
+Label file (GUI):  cluster_KSLabel.tsv
+Label file (FLOW): cluster_KSLabel.tsv
+GUI good clusters (from TSV):  141
+FLOW good clusters (from TSV): 141
+
+Hungarian 1:1 mapping method: hungarian (max overlap counts)
+Mapped pairs (nonzero overlap): 200
+
+Template similarity (cosine) best-match stats:
+Score definition:
+  -1 = opposite
+  0 = unrelated
+  1 = identical
+  ALL clusters:
+    GUI→FLOW: mean=0.8565, spike-wt=0.9358, sqrt-wt=0.9251  (n=224)
+    FLOW→GUI: mean=0.8608, spike-wt=0.9346, sqrt-wt=0.9213  (n=222)
+  GOOD-only:
+    GUI→FLOW: mean=0.9021, spike-wt=0.9373, sqrt-wt=0.9286  (n=139)
+    FLOW→GUI: mean=0.8662, spike-wt=0.9389, sqrt-wt=0.9262  (n=138)
+
+Precision (O/|FLOW|) best-match stats (percent):
+  ALL clusters:
+    GUI→FLOW: mean=66.64%, spike-wt=90.30%, sqrt-wt=85.30%  (n=224)
+    FLOW→GUI: mean=78.95%, spike-wt=88.60%, sqrt-wt=85.08%  (n=222)
+  GOOD-only:
+    GUI→FLOW: mean=76.23%, spike-wt=89.66%, sqrt-wt=85.20%  (n=139)
+    FLOW→GUI: mean=79.24%, spike-wt=89.74%, sqrt-wt=85.97%  (n=138)
+
+Recall (O/|GUI|) best-match stats (percent):
+  ALL clusters:
+    GUI→FLOW: mean=80.63%, spike-wt=84.68%, sqrt-wt=84.22%  (n=224)
+    FLOW→GUI: mean=71.52%, spike-wt=86.39%, sqrt-wt=82.83%  (n=222)
+  GOOD-only:
+    GUI→FLOW: mean=85.87%, spike-wt=88.47%, sqrt-wt=87.04%  (n=139)
+    FLOW→GUI: mean=73.59%, spike-wt=88.85%, sqrt-wt=85.31%  (n=138)
+
+F1 (2O/(|GUI|+|FLOW|)) best-match stats (percent):
+  ALL clusters:
+    GUI→FLOW: mean=66.38%, spike-wt=86.03%, sqrt-wt=82.45%  (n=224)
+    FLOW→GUI: mean=68.08%, spike-wt=84.67%, sqrt-wt=80.02%  (n=222)
+  GOOD-only:
+    GUI→FLOW: mean=76.38%, spike-wt=87.96%, sqrt-wt=84.10%  (n=139)
+    FLOW→GUI: mean=70.23%, spike-wt=87.22%, sqrt-wt=82.65%  (n=138)
+
+Min-norm (O/min(|GUI|,|FLOW|)) best-match stats (percent):
+  ALL clusters:
+    GUI→FLOW: mean=85.53%, spike-wt=93.48%, sqrt-wt=91.90%  (n=224)
+    FLOW→GUI: mean=86.24%, spike-wt=93.60%, sqrt-wt=91.62%  (n=222)
+  GOOD-only:
+    GUI→FLOW: mean=90.25%, spike-wt=93.55%, sqrt-wt=92.24%  (n=139)
+    FLOW→GUI: mean=86.78%, spike-wt=94.22%, sqrt-wt=92.18%  (n=138)
+
+Outputs:
+  /data/spiking_algorithm/run-files/hungarian_mapping.csv
+  /data/spiking_algorithm/run-files/per_gui_best_match.csv
+  /data/spiking_algorithm/run-files/heatmap_template_similarity.png
+  /data/spiking_algorithm/run-files/heatmap_overlap_row_norm.png
+  /data/spiking_algorithm/run-files/heatmap_f1.png
+  /data/spiking_algorithm/run-files/heatmap_min_norm.png
