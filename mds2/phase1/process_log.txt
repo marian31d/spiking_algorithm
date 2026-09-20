@@ -1,0 +1,9 @@
+Reading data from /data/mDS2/dat/mDS2_02/mDS2_02.dat...
+binary size: 209010960
+Processed 100000 batches... out of 209010960
+Processing complete. Detected 0 spikes.
+Saving results in Kilosort format...
+Saved 0 spikes to /data/results/mds2_res/flows_c/2peels/V3.5//spike_times.npy
+Saved 0 spikes to /data/results/mds2_res/flows_c/2peels/V3.5//spike_templates.npy
+Saved 0 spikes to /data/results/mds2_res/flows_c/2peels/V3.5//amplitudes.npy
+Done!
