@@ -226,8 +226,7 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
         Cf[:, :nt] = 0
         Cf[:, -nt:] = 0
 
-        Cfmax, imax = torch.max(Cf, 0) 
-        #slides a window of width 2*nt+1 along the length axis and outputs the max inside each window
+        Cfmax, imax = torch.max(Cf, 0)
         Cmax  = max_pool1d(Cfmax.unsqueeze(0).unsqueeze(0), (2*nt+1), stride=1, padding=(nt))
 
         #print(Cfmax.shape)
@@ -258,14 +257,6 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
         k+= nsp
 
         #amp = B[iY,iX] 
-        if t==1:
-            Cmax1_np = Cmax.detach().cpu().numpy()
-            result_dir = "/data/results/mP79_res/IIR/time/3600/1peel/2ndOrd-filt/Cmax_1.npy"
-            np.save(result_dir, Cmax1_np)
-        if t==2:
-            Cmax2_np = Cmax.detach().cpu().numpy()
-            result_dir = "/data/results/mP79_res/IIR/time/3600/1peel/2ndOrd-filt/Cmax_2.npy"
-            np.save(result_dir, Cmax2_np)
 
         n = 2
         for j in range(n):
