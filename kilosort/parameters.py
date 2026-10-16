@@ -190,6 +190,22 @@ EXTRA_PARAMETERS = {
             """
     },
 
+    'hp_filter_mode': {
+        'gui_name': 'highpass filter mode', 'type': str, 'min': None, 'max': None,
+        'exclude': [], 'default': 'fir', 'step': 'preprocessing',
+        'description':
+            """
+            Implementation used for the highpass filter. One of:
+            'fir'  : Kilosort default. Impulse response of a 3rd-order
+                     Butterworth filter, applied as a zero-phase FFT
+                     convolution (with fftshift).
+            'iir3' : causal 3rd-order Butterworth via `scipy.signal.lfilter`.
+            'iir2' : causal 2nd-order Butterworth via `scipy.signal.lfilter`.
+            The IIR modes are causal and introduce a real group delay, so no
+            fftshift is applied. All modes use `highpass_cutoff`.
+            """
+    },
+
     'binning_depth': {
         'gui_name': 'binning_depth', 'type': float, 'min': 0, 'max': np.inf,
         'exclude': [0], 'default': 5, 'step': 'preprocessing',

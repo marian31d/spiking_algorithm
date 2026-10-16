@@ -27,7 +27,17 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
-#torch.use_deterministic_algorithms(True)
+# warn_only: CAR's torch.median has no deterministic CUDA kernel for its
+# indices (only the values are used, which are deterministic). Needed so
+# overlapping index_put writes in template_matching.run_matching are ordered.
+torch.use_deterministic_algorithms(True, warn_only=True)
+# That median warning would otherwise print once per batch, because the
+# `warnings.catch_warnings()` blocks in io.py reset Python's once-per-location
+# registry. Other determinism warnings are still shown.
+import warnings
+warnings.filterwarnings(
+    'ignore', message='median CUDA with indices output does not have a deterministic'
+    )
 
 import kilosort
 from kilosort import (preprocessing, datashift, template_matching, clustering_qr, 
@@ -382,20 +392,29 @@ def _sort(filename, results_dir, probe, settings, data_dtype, device, do_CAR,
         logger.info('Re-extracting spikes on full recording with frozen templates...')
         Wall = Wall.to(device)  # ensure Wall is on the correct device
 
-        # permute from (n_clusters, n_chans, n_pcs) to (n_clusters, n_pcs, n_chans)
-        n_pcs = int(ops['settings']['n_pcs'])
-        if Wall.shape[1] != n_pcs:
-            Wall_match = Wall.permute(0, 2, 1).contiguous()
+        # Time-align the merged templates and put them in the (n_clusters,
+        # n_pcs, n_chans) layout that `template_matching.extract` expects.
+        # Done unconditionally so the saved templates are always ready to be
+        # re-used for template matching, regardless of `freeze_sec`.
+        Wall_match, _ = template_matching.align_U(Wall, ops, device=device)
+
+        if np.isfinite(ops['settings']['freeze_sec']):
+            st, tF, ops = template_matching.extract(
+                ops, bfile, Wall_match, device=device,
+                progress_bar=progress_bar
+                )
+            clu_full = st[:, 1].astype('int32')
         else:
-            Wall_match = Wall
+            clu_full = clu
 
-        st, tF, ops = template_matching.extract(
-            ops, bfile, Wall_match, device=device, progress_bar=progress_bar
-        )
-        clu_full = st[:, 1].astype('int32')
-
-        Wall_np = Wall.detach().cpu().numpy() if torch.is_tensor(Wall) else Wall
-        np.save(os.path.join(results_dir, "Wall.npy"), Wall_np)
+        # Saved time-aligned, in (n_clusters, n_chans, n_pcs) layout. To re-use
+        # these for template matching, transpose to (n_clusters, n_pcs,
+        # n_chans) first, which is what `template_matching.extract` expects:
+        #     U = torch.from_numpy(np.load('Wall.npy')).transpose(1, 2)
+        # NOTE: `save_sorting` below still gets the un-aligned `Wall`, which is
+        # what `save_to_phy` needs to build templates.npy.
+        np.save(os.path.join(results_dir, "Wall.npy"),
+                Wall_match.transpose(1, 2).contiguous().detach().cpu().numpy())
 
         log_thread_count(logger)
         #################################################################################
@@ -702,11 +721,15 @@ def compute_preprocessing(ops, device, tic0=np.nan, file_object=None):
                               invert_sign=invert, dtype=dtype, tmin=tmin,
                               tmax=tmax, artifact_threshold=artifact,
                               shift=shift, scale=scale, file_object=file_object,
-                              batch_downsampling=batch_downsampling)
+                              batch_downsampling=batch_downsampling,
+                              hp_filter_mode=ops['settings']['hp_filter_mode'],
+                              highpass_cutoff=cutoff)
 
     logger.info(f'N samples: {bfile.n_samples}')
     logger.info(f'N seconds: {bfile.n_samples/fs}')
     logger.info(f'N batches: {bfile.n_batches}')
+    logger.info(f"Highpass filter: {ops['settings']['hp_filter_mode']} "
+                f"@ {cutoff}Hz")
 
     n_batches_freeze = freeze_n_batches(
         ops['settings']['freeze_sec'], fs, NT, bfile.n_batches
@@ -793,7 +816,9 @@ def compute_drift_correction(ops, device, tic0=np.nan, progress_bar=None,
         hp_filter=hp_filter, whiten_mat=whiten_mat, device=device, do_CAR=do_CAR,
         invert_sign=invert, dtype=dtype, tmin=tmin, tmax=tmax,
         artifact_threshold=artifact, shift=shift, scale=scale,
-        file_object=file_object, batch_downsampling=batch_downsampling
+        file_object=file_object, batch_downsampling=batch_downsampling,
+        hp_filter_mode=ops['settings']['hp_filter_mode'],
+        highpass_cutoff=ops['settings']['highpass_cutoff']
         )
 
     ops, st = datashift.run(ops, bfile, device=device, progress_bar=progress_bar,
@@ -819,7 +844,9 @@ def compute_drift_correction(ops, device, tic0=np.nan, progress_bar=None,
         hp_filter=hp_filter, whiten_mat=whiten_mat, device=device,
         dshift=ops['dshift'], do_CAR=do_CAR, dtype=dtype, tmin=tmin, tmax=tmax,
         artifact_threshold=artifact, shift=shift, scale=scale,
-        file_object=file_object, batch_downsampling=batch_downsampling
+        file_object=file_object, batch_downsampling=batch_downsampling,
+        hp_filter_mode=ops['settings']['hp_filter_mode'],
+        highpass_cutoff=ops['settings']['highpass_cutoff']
         )
 
     log_cuda_details(logger)

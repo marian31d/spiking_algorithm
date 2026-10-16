@@ -9,6 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from scipy.io import loadmat
+from scipy.signal import butter, lfilter
 import numpy as np
 import torch
 from torch.fft import fft, ifft, fftshift
@@ -134,7 +135,7 @@ def load_probe(probe_path):
 
     return probe
 
-  
+
 def save_probe(probe_dict, filepath):
     """Save a probe dictionary to a .json text file.
 
@@ -347,6 +348,7 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
     # spike properties
     spike_times = st[:,0].astype('int64') + imin  # shift by minimum sample index
     spike_templates = st[:,1].astype('int32')
+    spike_scores = st[:,2].astype('float32')  # matched-filter score of assigned template
     spike_clusters = clu
     xs, ys = compute_spike_positions(st, tF, ops)
     spike_positions = np.vstack([xs, ys]).T
@@ -361,10 +363,12 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
     amp = amplitudes[kept_spikes]
     spike_templates = spike_templates[kept_spikes]
     spike_positions = spike_positions[kept_spikes]
+    spike_scores = spike_scores[kept_spikes]
     np.save((results_dir / 'spike_times.npy'), spike_times)
     np.save((results_dir / 'spike_templates.npy'), spike_clusters)
     np.save((results_dir / 'spike_clusters.npy'), spike_clusters)
     np.save((results_dir / 'spike_positions.npy'), spike_positions)
+    np.save((results_dir / 'template_scores.npy'), spike_scores)
     np.save((results_dir / 'spike_detection_templates.npy'), spike_templates)
     np.save((results_dir / 'amplitudes.npy'), amp)
     # Save spike mask so that it can be applied to other variables if needed
@@ -551,7 +555,9 @@ def bfile_from_ops(ops=None, ops_path=None, filename=None, device=None):
         hp_filter=ops['fwav'], whiten_mat=ops['Wrot'], dshift=ops['dshift'],
         device=device, do_CAR=ops['do_CAR'], artifact_threshold=ops['artifact_threshold'],
         invert_sign=ops['invert_sign'], dtype=ops['data_dtype'], tmin=ops['tmin'],
-        tmax=ops['tmax'], shift=ops['shift'], scale=ops['scale']
+        tmax=ops['tmax'], shift=ops['shift'], scale=ops['scale'],
+        hp_filter_mode=ops['settings'].get('hp_filter_mode', 'fir'),
+        highpass_cutoff=ops['settings'].get('highpass_cutoff', 300)
         )
 
     return bfile
@@ -651,7 +657,7 @@ class BinaryRWFile:
         a, b = self._get_batch_edges(self.n_batches_raw-1)
         batch_size = b - a - self.nt
         if batch_size < self.nt:
-            self.n_batches -= 1
+            self.n_batches_raw -= 1
             self.imax -= batch_size
 
         self.set_downsampling(batch_downsampling)
@@ -973,7 +979,8 @@ class BinaryFiltered(BinaryRWFile):
                  device: torch.device = None, do_CAR: bool = True,
                  artifact_threshold: float = np.inf, invert_sign: bool = False,
                  dtype=None, tmin: float = 0.0, tmax: float = np.inf,
-                 shift=None, scale=None, file_object=None, batch_downsampling=1):
+                 shift=None, scale=None, file_object=None, batch_downsampling=1,
+                 hp_filter_mode='fir', highpass_cutoff=300):
 
         super().__init__(filename, n_chan_bin, fs, NT, nt, nt0min, device,
                          dtype=dtype, tmin=tmin, tmax=tmax, shift=shift,
@@ -986,6 +993,23 @@ class BinaryFiltered(BinaryRWFile):
         self.do_CAR = do_CAR
         self.invert_sign=invert_sign
         self.artifact_threshold = artifact_threshold
+
+        # --- highpass filter implementation ---
+        # 'fir'  : zero-phase FFT convolution with the butter(3) impulse
+        #          response in `hp_filter` (Kilosort default).
+        # 'iir2' / 'iir3' : causal Butterworth applied with `lfilter`.
+        if hp_filter_mode not in ('fir', 'iir2', 'iir3'):
+            raise ValueError(
+                "hp_filter_mode must be 'fir', 'iir2' or 'iir3'; "
+                f"got {hp_filter_mode!r}"
+                )
+        self.hp_mode = hp_filter_mode
+        if hp_filter_mode == 'fir':
+            self.b, self.a = None, None
+        else:
+            order = {'iir2': 2, 'iir3': 3}[hp_filter_mode]
+            self.b, self.a = butter(order, highpass_cutoff, fs=self.fs,
+                                    btype='high')
 
     def filter(self, X, ops=None, ibatch=None, skip_preproc=False):
         # pick only the channels specified in the chanMap
@@ -1003,11 +1027,19 @@ class BinaryFiltered(BinaryRWFile):
         if skip_preproc:
             return X
 
-        # high-pass filtering in the Fourier domain (much faster than filtfilt etc)
+        # high-pass filtering, see `hp_filter_mode`
         if self.hp_filter is not None:
-            fwav = fft_highpass(self.hp_filter, NT=X.shape[1])
-            X = torch.real(ifft(fft(X) * torch.conj(fwav)))
-            X = fftshift(X, dim = -1)
+            if self.hp_mode == 'fir':
+                # Fourier domain, zero-phase (much faster than filtfilt etc)
+                fwav = fft_highpass(self.hp_filter, NT=X.shape[1])
+                X = torch.real(ifft(fft(X) * torch.conj(fwav)))
+                X = fftshift(X, dim = -1)
+            else:
+                # Causal, per channel, forward only. No fftshift: causal
+                # filtering introduces a real group delay, not a symmetric
+                # shift to undo.
+                Xnp = lfilter(self.b, self.a, X.cpu().numpy(), axis=1)
+                X = torch.from_numpy(Xnp).to(self.device).float()
 
         if self.artifact_threshold < np.inf:
             if torch.any(torch.abs(X) >= self.artifact_threshold):
@@ -1081,7 +1113,9 @@ def save_preprocessing(filename, ops, bfile=None, bfile_path=None, verbose=False
         bfile = BinaryFiltered(
             filename=bfile_path, n_chan_bin=n_chans, chan_map=chan_map, nt=nt,
             NT=NT, hp_filter=hp_filter, whiten_mat=whiten_mat, dshift=dshift,
-            dtype=dtype
+            dtype=dtype,
+            hp_filter_mode=ops['settings'].get('hp_filter_mode', 'fir'),
+            highpass_cutoff=ops['settings'].get('highpass_cutoff', 300)
             )
 
     # Need weights to linearly smooth the overlapping portions of batches
