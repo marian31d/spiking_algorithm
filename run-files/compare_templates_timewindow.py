@@ -394,6 +394,10 @@ def main():
                          "Good/MUA labels are taken from the GUI directory's label TSV "
                          "(cluster_KSLabel.tsv / cluster_group.tsv) and applied to BOTH "
                          "GUI and FLOW (FLOW uses the same frozen KS cluster IDs).")
+    ap.add_argument("--good-labels", dest="good_labels", choices=["gui", "own"], default="gui",
+                    help="Which labels --good-only filters FLOW by. 'gui' (default): the GUI's "
+                         "good IDs for both sides. 'own': each side by its own label TSV, for "
+                         "runs clustered separately (cluster IDs do not correspond).")
     args = ap.parse_args()
 
     gui_phy = Path(args.gui_phy).resolve()
@@ -460,9 +464,19 @@ def main():
                 f"file ({_glabel_file}) under {gui_phy}. Cannot filter.")
         print(f"Applying good-only filter: {len(good_set)} good clusters "
               f"(labels from GUI dir: {_glabel_file})")
+        flow_good_ids = good_set
+        if args.good_labels == "own":
+            _flabels, _flabel_file = load_labels(str(flow_phy))
+            flow_good_ids = {cid for cid, lab in _flabels.items() if lab == "good"}
+            if not flow_good_ids:
+                raise RuntimeError(
+                    f"--good-labels own: no 'good' clusters found in the FLOW label "
+                    f"file ({_flabel_file}) under {flow_phy}. Cannot filter.")
+            print(f"  FLOW filtered by its own labels: {len(flow_good_ids)} good clusters "
+                  f"(labels from FLOW dir: {_flabel_file})")
 
         g_keep = np.isin(gui_clu, np.fromiter(good_set, dtype=np.int64))
-        f_keep = np.isin(flow_clu, np.fromiter(good_set, dtype=np.int64))
+        f_keep = np.isin(flow_clu, np.fromiter(flow_good_ids, dtype=np.int64))
         print(f"  GUI  spikes: {int(g_keep.sum())}/{gui_clu.size} kept "
               f"({100.0*g_keep.mean():.1f}%)")
         print(f"  FLOW spikes: {int(f_keep.sum())}/{flow_clu.size} kept "
@@ -540,6 +554,8 @@ def main():
 
     gui_good_set = {cid for cid, lab in gui_labels.items() if lab == "good"}
     flow_good_set = {cid for cid, lab in gui_labels.items() if lab == "good"}
+    if args.good_only and args.good_labels == "own":
+        flow_good_set = {cid for cid, lab in flow_labels.items() if lab == "good"}
 
     # Overlap
     M, gui_ids, flow_ids = build_overlap(gui_m, flow_m)
@@ -741,6 +757,8 @@ def main():
     summary_lines.append(f"GUI phy:  {gui_phy}")
     summary_lines.append(f"FLOW phy: {flow_phy}")
     summary_lines.append(f"tol (samples): {args.tol}")
+    if args.good_only:
+        summary_lines.append(f"Good-only filter: ON (FLOW labels: {args.good_labels})")
     summary_lines.append("")
     summary_lines.append(f"Matched spikes: {n_match}")
     summary_lines.append(f"Matched spikes/GUI window spikes: {100.0*n_match/max(gui_kept_spikes,1):.2f}%")
