@@ -254,8 +254,8 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
     Parameters
     ----------
     st : np.ndarray
-        3-column array of peak time (in samples), template, and thresold
-        amplitude for each spike.
+        4-column array of peak time (in samples), template, threshold
+        amplitude, and template-matching peel index (0-based) for each spike.
     clu : np.ndarray
         1D vector of cluster ids indicating which spike came from which cluster,
         same shape as `st[:,0]`.
@@ -349,6 +349,8 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
     spike_times = st[:,0].astype('int64') + imin  # shift by minimum sample index
     spike_templates = st[:,1].astype('int32')
     spike_scores = st[:,2].astype('float32')  # matched-filter score of assigned template
+    # template-matching peel (0-based) in which each spike was detected
+    spike_peels = st[:,3].astype('int32') if st.shape[1] > 3 else None
     spike_clusters = clu
     xs, ys = compute_spike_positions(st, tF, ops)
     spike_positions = np.vstack([xs, ys]).T
@@ -371,6 +373,8 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
     np.save((results_dir / 'template_scores.npy'), spike_scores)
     np.save((results_dir / 'spike_detection_templates.npy'), spike_templates)
     np.save((results_dir / 'amplitudes.npy'), amp)
+    if spike_peels is not None:
+        np.save((results_dir / 'spike_peels.npy'), spike_peels[kept_spikes])
     # Save spike mask so that it can be applied to other variables if needed
     # when loading results.
     np.save((results_dir / 'kept_spikes.npy'), kept_spikes)
@@ -1019,7 +1023,7 @@ class BinaryFiltered(BinaryRWFile):
         if self.invert_sign:
             X = X * -1
 
-        X = X - X.mean(1).unsqueeze(1)
+        #X = X - X.mean(1).unsqueeze(1)
         if self.do_CAR:
             # remove the mean of each channel, and the median across channels
             X = X - torch.median(X, 0)[0]
