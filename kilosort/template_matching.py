@@ -66,7 +66,7 @@ def extract(ops, bfile, U, device=torch.device('cuda'), progress_bar=None):
     
     tiwave = torch.arange(-(nt//2), nt//2+1, device=device) 
     ctc = prepare_matching(ops, U)
-    st = np.zeros((10**6, 3), 'float64')
+    st = np.zeros((10**6, 4), 'float64')
     tF  = torch.zeros((10**6, nC , ops['settings']['n_pcs']))
     k = 0
     prog = tqdm(
@@ -106,7 +106,7 @@ def extract(ops, bfile, U, device=torch.device('cuda'), progress_bar=None):
             #     z.flush()
             #     del(z)
             ##################################
-            stt, amps, th_amps, Xres = run_matching(ops, X, U, ctc, device=device)
+            stt, amps, th_amps, peels, Xres = run_matching(ops, X, U, ctc, device=device)
             xfeat = Xres[iCC[:, iU[stt[:,1:2]]],stt[:,:1] + tiwave] @ ops['wPCA'].T
             xfeat += amps * Ucc[:,stt[:,1]]
 
@@ -118,6 +118,7 @@ def extract(ops, bfile, U, device=torch.device('cuda'), progress_bar=None):
                 xfeat = xfeat[:,~neg_spikes,:]
                 amps = amps[~neg_spikes,:]
                 th_amps = th_amps[~neg_spikes,:]
+                peels = peels[~neg_spikes,:]
 
             nsp = len(stt) 
             if k+nsp>st.shape[0]:                     
@@ -129,6 +130,7 @@ def extract(ops, bfile, U, device=torch.device('cuda'), progress_bar=None):
             st[k:k+nsp,0] = ((stt[:,0]-nt) + t_shift).cpu().numpy() - nt//2 + ops['nt0min']
             st[k:k+nsp,1] = stt[:,1].cpu().numpy()
             st[k:k+nsp,2] = th_amps.cpu().numpy().squeeze()
+            st[k:k+nsp,3] = peels.cpu().numpy().squeeze()
             
             tF[k:k+nsp]  = xfeat.transpose(0,1).cpu()
 
@@ -210,6 +212,8 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
     st = torch.zeros((100000,2), dtype = torch.int64, device = device)
     amps = torch.zeros((100000,1), dtype = torch.float, device = device)
     th_amps = torch.zeros((100000,1), dtype = torch.float, device = device)
+    # Index (0-based) of the peel iteration in which each spike was detected.
+    peels = torch.zeros((100000,1), dtype = torch.int64, device = device)
     k = 0
 
     Xres = X.clone()
@@ -253,6 +257,7 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
         # Raw score compared against Th**2 in cnd1/against Cfmax in cnd2 above,
         # not an amplitude -- no sqrt, to match that comparison exactly.
         th_amps[k:k+nsp] = Cmax[0, 0, iX[:,0], None]
+        peels[k:k+nsp] = t
 
         k+= nsp
 
@@ -267,8 +272,9 @@ def run_matching(ops, X, U, ctc, device=torch.device('cuda')):
     st = st[:k]
     amps = amps[:k]
     th_amps = th_amps[:k]
+    peels = peels[:k]
 
-    return  st, amps, th_amps, Xres
+    return  st, amps, th_amps, peels, Xres
 
 
 def merging_function(ops, Wall, clu, st, tF, r_thresh=0.5, mode='ccg', check_dt=True,
