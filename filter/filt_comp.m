@@ -145,6 +145,9 @@ fprintf('3rd-order IIR (causal)   : %4d samples = %.3f ms (one-sided)\n', s3, s3
 smin = one_sided_settle(h_min, 1);
 fprintf('min-phase FIR (causal)   : %4d samples = %.3f ms (one-sided)\n', smin, smin/fs*1000);
 
+sfir = one_sided_settle(h_short, 1);
+fprintf('11-tap FIR (causal)      : %4d samples = %.3f ms (one-sided)\n', sfir, sfir/fs*1000);
+
 pk_ff = max(abs(h_ff));
 idx   = find(abs(h_ff) > thresh*pk_ff);
 pre   = m - idx(1);          % samples before the impulse (lookahead)
