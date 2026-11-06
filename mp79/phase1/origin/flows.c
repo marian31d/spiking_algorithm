@@ -138,7 +138,13 @@ static float kth_smallest(float *buf, int n, int k) {
 int filter_sample(SampleBuffer *sample, uint32_t i) {
     int32_t h = sample->head;
 
-    // 1. Filter each sample
+    // 1. CAR - median
+    float car_tmp[NCHAN];
+    for (int c = 0; c < NCHAN; c++) car_tmp[c] = sample->raw_data[h][c];
+    float med = kth_smallest(car_tmp, NCHAN, (NCHAN - 1) / 2);   // lower median, n=124 -> index 61
+    for (int c = 0; c < NCHAN; c++) sample->raw_data[h][c] -= med;
+
+    // 2. Filter each sample
     for (int c = 0; c < NCHAN; c++){    
         float x0 = sample->raw_data[h][c];
         float y = (iir_weights[0] * x0) 
@@ -159,12 +165,6 @@ int filter_sample(SampleBuffer *sample, uint32_t i) {
     /* printf("Filtered batch %u: value =\n", i);
     for(int c=0; c<NCHAN; c++){printf("  %f", sample->raw_data[h][c]); if(c%10==0){printf("\n");}}
     printf("\n"); */
-
-    // 2. CAR - median
-    float car_tmp[NCHAN];
-    for (int c = 0; c < NCHAN; c++) car_tmp[c] = sample->raw_data[h][c];
-    float med = kth_smallest(car_tmp, NCHAN, (NCHAN - 1) / 2);   // lower median, n=124 -> index 61
-    for (int c = 0; c < NCHAN; c++) sample->raw_data[h][c] -= med;
 
     // 3. Whitening
     //int batch_idx = i / BATCH_SIZE; //debug: dshift for all batches

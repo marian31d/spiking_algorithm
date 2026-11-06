@@ -132,7 +132,13 @@ int kth_smallest(int16_t *buf, int n, int k) {
 
 int filter_sample(SampleBuffer *sample, uint32_t i){
     uint32_t h = sample->head;
-    // 1. Filter each sample
+    // 1. CAR - median
+    int16_t car_tmp[NCHAN];
+    for (int c = 0; c < NCHAN; c++) car_tmp[c] = sample->raw_data[h][c];
+    int16_t med = kth_smallest(car_tmp, NCHAN, (NCHAN - 1) / 2);   // lower median, n=124 -> index 61
+    for (int c = 0; c < NCHAN; c++) sample->raw_data[h][c] -= med;
+
+    // 2. Filter each sample
     for (int c = 0; c < NCHAN; c++){    
         int16_t x0 = sample->raw_data[h][c];
         int32_t y = (iir_weights[0] * x0) 
@@ -151,12 +157,6 @@ int filter_sample(SampleBuffer *sample, uint32_t i){
         iir_y1[c] = (int16_t)y;
         sample->raw_data[h][c] = (int16_t)y;
     }
-
-    // 2. CAR - median
-    int16_t car_tmp[NCHAN];
-    for (int c = 0; c < NCHAN; c++) car_tmp[c] = sample->raw_data[h][c];
-    int16_t med = kth_smallest(car_tmp, NCHAN, (NCHAN - 1) / 2);   // lower median, n=124 -> index 61
-    for (int c = 0; c < NCHAN; c++) sample->raw_data[h][c] -= med;
 
     // 3. Whitening
     int16_t whitened_temp[NCHAN];
