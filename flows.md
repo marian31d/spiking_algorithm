@@ -146,8 +146,6 @@ of RAM and 67–80 KB of constant data.
 | | mS51 | mP79 | mDS2 |
 |---|---|---|---|
 | `NCHAN` / `NCHAN_BIN` | 126 / 135 | 124 / 136 | 62 / 70 |
-| `V_TH` (gate) | 3.5 | 3.7 | 3.5 |
-| TH check | off | off | on |
 | Shanks (pershank) | 8 | 12 | 4 |
 
 ## Other files

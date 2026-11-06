@@ -25,7 +25,7 @@
 #define NT 61
 #define NPCS 3
 #define FS 20000
-#define V_TH 3.7f                // magnitude trigger on whitened data — TUNE
+#define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
 //Algorithm specific constants
 #define LAG 3
 #define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)

@@ -51,7 +51,7 @@
 #define NT 61
 #define NPCS 3
 #define FS 20000
-#define V_TH 3.7f                // magnitude trigger on whitened data — TUNE
+#define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
 //Algorithm specific constants
 #define LAG 3
 #define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
@@ -365,7 +365,7 @@ void flows_step(const int16_t *frame, uint32_t i) {
 #define DAT_FILE "/data/mP79/dat/mP79_17/mP79_17.dat"
 #endif
 #ifndef RESULTS_DIR
-#define RESULTS_DIR "/data/results/mP79_res/flows_c/pershank/with_th"
+#define RESULTS_DIR "/data/results/mP79_res/flows_c/pershank/with_th/3.5"
 #endif
 #define TEMPLATES_FILE "spike_templates.npy"
 #ifndef N_SAMPLES
