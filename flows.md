@@ -18,8 +18,10 @@ Each dataset has two versions:
 
 For every new sample (one value per channel):
 
-1. **Preprocess:** CAR (subtract the median across channels), a 3rd-order
-   300 Hz high-pass IIR filter, and whitening with `Wrot`.
+1. **Preprocess:** CAR (subtract the median across channels), then a
+   3rd-order 300 Hz high-pass IIR filter, then whitening with `Wrot`. This is
+   Kilosort's order, and both versions use it (so do `phase2/flows.c` and
+   `mp79/phase3/flows_scaled.c`).
 2. **Gate:** template matching runs only when a whitened channel has a peak
    larger than `V_TH`.
 3. **Score:** the last 61 samples are projected on the PCs (`wPCA`) and
@@ -38,7 +40,6 @@ For every new sample (one value per channel):
 | | origin | pershank |
 |---|---|---|
 | Channels | the whole probe at once | each shank separately: its own CAR, whitening, templates and peeling |
-| Order of steps | filter → CAR → whitening | CAR → filter → whitening (Kilosort's order; matches Kilosort's preprocessing exactly) |
 | Headers made from | whole-probe run `time/3600/peel_specified` | per-shank runs `time/module/5400/shank_<N>` |
 | First sample processed | 72,000,000 (3600 s) | 108,000,000 (5400 s) |
 | Memory | `malloc` for all spikes; PC only | all static, no `malloc`; also builds for bare metal (`HOST_IO=0`) |
@@ -119,4 +120,5 @@ of RAM and 67–80 KB of constant data.
 - `process_log.txt`: console output of the last full run.
 - `probe_*`: probe files.
 - `flows_fir.c`, `fir_weights.h`, `fir_filter_taps.h`: an older version with
-  an FIR filter, kept for reference only. It doesn't build as is.
+  an FIR filter, kept for reference only. It doesn't build as is, and it still
+  filters before CAR.
