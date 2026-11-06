@@ -40,32 +40,60 @@ For every new sample (one value per channel):
 | | origin | pershank |
 |---|---|---|
 | Channels | the whole probe at once | each shank separately: its own CAR, whitening, templates and peeling |
-| Headers made from | whole-probe run `time/3600/peel_specified` | per-shank runs `time/module/5400/shank_<N>` |
 | First sample processed | 72,000,000 (3600 s) | 108,000,000 (5400 s) |
 | Memory | `malloc` for all spikes; PC only | all static, no `malloc`; also builds for bare metal (`HOST_IO=0`) |
-| Output folder | `/data/results/<m>_res/flows_c/` | `/data/results/<m>_res/flows_c/pershank/` |
 
-In the output folders, `<m>` is `mS51`, `mP79` or `mds2`. mS51 writes one
-level deeper, into `no_th/`, because TH is off for it.
 
 ## Header files (what is exported from Kilosort)
 
-`run-files/npytoC_conv.py` writes these from a Kilosort results folder. Use
-`per_shank = False` for origin and `per_shank = True` for pershank.
+`run-files/npytoC_conv.py` writes the headers. The `per_shank` switch at the
+top of its `main()` chooses between the two versions below.
 
-| Header | Holds | origin shape | pershank shape |
-|---|---|---|---|
-| `Wall.h` | templates in PC space (masked to the 10 nearest channels) | templates × channels × 3 | all shanks' templates × `NCHAN_MAX` × 3 |
-| `Wall_nm.h` | squared norm of each template | templates | all templates |
-| `TH.h` | per-template threshold (5th percentile of its scores) | templates | all templates |
-| `Wrot.h` | whitening matrix | channels × channels | shanks × `NCHAN_MAX` × `NCHAN_MAX` |
-| `wPCA.h` | temporal PCs | 3 × 61 | shanks × 3 × 61 (each shank has its own) |
-| `iir_weights.h` | high-pass filter coefficients | 7 | 7 |
-| `shank_info.h` | pershank only: number of shanks, channels per shank, which templates belong to which shank, channel map | – | – |
+In both versions:
+- `Wall.h` keeps only each template's 10 nearest channels (Kilosort's
+  `nearest_chans`); the other channels are zero.
+- `npytoC_conv.py` prints `Th_learned` but doesn't export it. The C code has
+  Th_learned² written by hand (`TH_LEARNED_SQ`, 64).
 
-In pershank every shank is padded with zeros to the size of the largest shank
-(`NCHAN_MAX`). Shank `s` owns templates `shank_offset[s]` to
-`shank_offset[s+1]-1`.
+### Whole probe (origin)
+
+`per_shank = False`. Reads one whole-probe Kilosort run (`export_dir`, for
+example `time/3600/peel_specified`) and writes into `<dataset>/phase1/origin/`.
+
+| Header | Holds | Shape |
+|---|---|---|
+| `Wall.h` | templates in PC space | templates × channels × 3 |
+| `Wall_nm.h` | squared norm of each template | templates |
+| `TH.h` | per-template threshold (5th percentile of its scores) | templates |
+| `Wrot.h` | whitening matrix of the whole probe | channels × channels |
+| `wPCA.h` | temporal PCs | 3 × 61 |
+| `iir_weights.h` | high-pass filter coefficients | 7 |
+
+In C, template `t` is `Wall[t*(NCHAN*NPCS) + c*NPCS + p]`.
+
+### Per shank (pershank)
+
+`per_shank = True`. Reads every `shank_<N>` folder in `flow_dir`
+(`time/module/5400`, one Kilosort run per shank). It combines them into one
+header per array and writes into `<dataset>/phase1/pershank/`.
+
+Shanks have different numbers of channels, so every shank is padded with zeros
+to the size of the largest shank (`NCHAN_MAX`). The padded channels are zero in
+`Wall` and `Wrot`, so they add nothing. Templates are stacked shank by shank:
+shank `s` owns templates `shank_offset[s]` to `shank_offset[s+1]-1`.
+
+| Header | Holds | Shape |
+|---|---|---|
+| `Wall.h` | templates of all shanks in PC space | all templates × `NCHAN_MAX` × 3 |
+| `Wall_nm.h` | squared norm of each template | all templates |
+| `TH.h` | per-template threshold (5th percentile of its scores) | all templates |
+| `Wrot.h` | one whitening matrix per shank | shanks × `NCHAN_MAX` × `NCHAN_MAX` |
+| `wPCA.h` | temporal PCs, one set per shank (each run learns its own) | shanks × 3 × 61 |
+| `iir_weights.h` | high-pass filter coefficients | 7 |
+| `shank_info.h` | number of shanks, `NCHAN_MAX` and number of templates; per shank: its Kilosort shank number, channel count, first template (`shank_offset`) and channel map | – |
+
+In C, the macros `WALL(t, c, p)`, `WROT(s, w, c)` and `WPCA(s, p, k)` do the
+indexing.
 
 ## Inputs and outputs
 
