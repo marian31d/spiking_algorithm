@@ -268,13 +268,13 @@ def main():
     per_shank = False   # True: combine the shank_<N> runs in flow_dir into one header per array
     flow_dir = "/data/results/mds2_res/IIR/updated_clu/time/module/5400"   # used when per_shank
     export_dir = "/data/results/mds2_res/IIR/updated_clu/time/3600/peel_specified"
-    phase_dir = "/data/spiking_algorithm/mds2/phase1"
-    result_dir = os.path.join(phase_dir, "origin")   # whole-probe headers, next to origin/flows.c
+    dataset_dir = "/data/spiking_algorithm/mds2"
+    result_dir = os.path.join(dataset_dir, "phase1")   # whole-probe headers, next to phase1/flows.c (or phase2)
     num_shanks = 8  # Set this according to your probe geometry
 
     if per_shank:
         # per-shank headers go next to pershank/flows.c
-        shank_out = os.path.join(phase_dir, "pershank")
+        shank_out = os.path.join(dataset_dir, "pershank")
         export_per_shank(flow_dir, shank_out)
         get_iir_weights(shank_out)
         return

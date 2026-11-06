@@ -43,8 +43,8 @@
 #define ABSF(x) ((x) < 0.0f ? -(x) : (x))   // fabsf without libm
 
 #define NCLU NCLU_ALL   //Number of clusters over all shanks (shank_info.h)
-#define NCHAN 126       //channels per time step used from the recording (the first NCHAN of the .dat)
-#define NCHAN_BIN 135   //channels per time step in the .dat file
+#define NCHAN 62        //channels per time step used from the recording (the first NCHAN of the .dat)
+#define NCHAN_BIN 70    //channels per time step in the .dat file
 #define NCH_PAD (N_SHANKS * NCHAN_MAX)   //ring-buffer width: shank s owns columns s*NCHAN_MAX .. s*NCHAN_MAX + NCHAN_MAX-1
 #define TH_LEARNED_SQ 64.00f   //Th_learned^2 (single precision: no double math on the target)
 //Constants
@@ -362,12 +362,12 @@ void flows_step(const int16_t *frame, uint32_t i) {
 #include <string.h>
 
 #ifndef DAT_FILE
-#define DAT_FILE "/data/mS51/dat/mS51_49/mS51_49.dat"
+#define DAT_FILE "/data/mDS2/dat/mDS2_02/mDS2_02.dat"
 #endif
 #ifndef RESULTS_DIR
-#define RESULTS_DIR "/data/results/mS51_res/flows_c/pershank/no_th"
+#define RESULTS_DIR "/data/results/mds2_res/flows_c/pershank/no_th"
 #endif
-#define TEMPLATES_FILE "spike_clusters.npy"
+#define TEMPLATES_FILE "spike_templates.npy"
 #ifndef N_SAMPLES
 #define N_SAMPLES 0u      // samples to process from START_SAMPLE; 0 = to the end of the file
 #endif

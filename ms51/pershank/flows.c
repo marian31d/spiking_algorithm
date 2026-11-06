@@ -23,7 +23,7 @@
 #define START_SAMPLE 108000000u   // 5400 s * 20 kHz: first sample after the freeze_sec learning window
 #endif
 #ifndef USE_TH
-#define USE_TH 0                  // 1: also require cf > TH[t] (per-template threshold, TH.h)
+#define USE_TH 1                  // 1: also require cf > TH[t] (per-template threshold, TH.h)
 #endif
 
 // Include array hearder files for configuration
@@ -43,15 +43,15 @@
 #define ABSF(x) ((x) < 0.0f ? -(x) : (x))   // fabsf without libm
 
 #define NCLU NCLU_ALL   //Number of clusters over all shanks (shank_info.h)
-#define NCHAN 124       //channels per time step used from the recording (the first NCHAN of the .dat)
-#define NCHAN_BIN 136   //channels per time step in the .dat file
+#define NCHAN 126       //channels per time step used from the recording (the first NCHAN of the .dat)
+#define NCHAN_BIN 135   //channels per time step in the .dat file
 #define NCH_PAD (N_SHANKS * NCHAN_MAX)   //ring-buffer width: shank s owns columns s*NCHAN_MAX .. s*NCHAN_MAX + NCHAN_MAX-1
 #define TH_LEARNED_SQ 64.00f   //Th_learned^2 (single precision: no double math on the target)
 //Constants
 #define NT 61
 #define NPCS 3
 #define FS 20000
-#define V_TH 3.7f                // magnitude trigger on whitened data — TUNE
+#define V_TH 3.5f                // magnitude trigger on whitened data — TUNE
 //Algorithm specific constants
 #define LAG 3
 #define NT_TRIG 61               // 20 pre-peak + peak + 2  (peak at nt0min=20)
@@ -362,12 +362,12 @@ void flows_step(const int16_t *frame, uint32_t i) {
 #include <string.h>
 
 #ifndef DAT_FILE
-#define DAT_FILE "/data/mP79/dat/mP79_17/mP79_17.dat"
+#define DAT_FILE "/data/mS51/dat/mS51_49/mS51_49.dat"
 #endif
 #ifndef RESULTS_DIR
-#define RESULTS_DIR "/data/results/mP79_res/flows_c/pershank"
+#define RESULTS_DIR "/data/results/mS51_res/flows_c/pershank/with_th"
 #endif
-#define TEMPLATES_FILE "spike_templates.npy"
+#define TEMPLATES_FILE "spike_clusters.npy"
 #ifndef N_SAMPLES
 #define N_SAMPLES 0u      // samples to process from START_SAMPLE; 0 = to the end of the file
 #endif
